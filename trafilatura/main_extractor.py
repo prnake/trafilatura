@@ -590,9 +590,13 @@ def extract_content(cleaned_tree, options):
 
     # try parsing wild <p> elements if nothing found or text too short
     # todo: test precision and recall settings here
-    if len(result_body) == 0 or len(temp_text) < options.min_extracted_size:
-        result_body = recover_wild_text(backup_tree, result_body, options, potential_tags)
+    if len(result_body) == 0:
+    # if len(result_body) == 0 or len(temp_text) < options.min_extracted_size:
+        result_body = recover_wild_text(
+            backup_tree, result_body, options, potential_tags
+        )
         temp_text = ' '.join(result_body.itertext()).strip()
+
     # filter output
     strip_elements(result_body, 'done')
     strip_tags(result_body, 'div')
