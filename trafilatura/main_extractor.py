@@ -166,8 +166,11 @@ def handle_lists(element, options):
                 processed_element.append(new_child_elem)
         else:
             process_nested_elements(child, new_child_elem, options)
+            new_child_elem_children = [el for el in new_child_elem.getchildren() if el.tag != "done"]
+            if not new_child_elem.text.strip():
+                new_child_elem.text = new_child_elem_children[0].text
+                new_child_elem_children[0].text = ""
             if child.tail is not None and child.tail.strip():
-                new_child_elem_children = [el for el in new_child_elem.getchildren() if el.tag != "done"]
                 if new_child_elem_children:
                     last_subchild = new_child_elem_children[-1]
                     if last_subchild.tail is None or not last_subchild.tail.strip():
@@ -585,13 +588,13 @@ def extract_content(cleaned_tree, options):
     backup_tree = deepcopy(cleaned_tree)
 
     result_body, temp_text, potential_tags = _extract(cleaned_tree, options)
-    #if len(result_body) == 0:
+    # if len(result_body) == 0:
     #    result_body, temp_text, potential_tags = _extract(tree_backup, options)
 
     # try parsing wild <p> elements if nothing found or text too short
     # todo: test precision and recall settings here
     if len(result_body) == 0:
-    # if len(result_body) == 0 or len(temp_text) < options.min_extracted_size:
+        # if len(result_body) == 0 or len(temp_text) < options.min_extracted_size:
         result_body = recover_wild_text(
             backup_tree, result_body, options, potential_tags
         )
