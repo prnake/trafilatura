@@ -272,58 +272,61 @@ def handle_paragraphs(element, potential_tags, options):
     # children
     processed_element = Element(element.tag)
     for child in element.iter("*"):
-        if child.tag not in potential_tags and child.tag != "done":
-            LOGGER.debug("unexpected in p: %s %s %s", child.tag, child.text, child.tail)
-            # continue
-        # spacing = child.tag in SPACING_PROTECTED  # todo: outputformat.startswith('xml')?
-        # todo: act on spacing here?
-        processed_child = handle_textnode(child, options, comments_fix=False, preserve_spaces=True)
-        if processed_child is not None:
-            # todo: needing attention!
-            if processed_child.tag == "p":
-                LOGGER.debug("extra p within p: %s %s %s", processed_child.tag, processed_child.text,
-                             processed_child.tail)
-                if processed_element.text:
-                    processed_element.text += " " + processed_child.text
-                else:
-                    processed_element.text = processed_child.text
-                child.tag = "done"
-                continue
-            # handle formatting
-            newsub = Element(child.tag)
-            if processed_child.tag in P_FORMATTING:
-                # check depth and clean
-                if len(processed_child) > 0:
-                    for item in processed_child:  # children are lists
-                        if text_chars_test(item.text) is True:
-                            item.text = " " + item.text
-                        strip_tags(processed_child, item.tag)
-                # correct attributes
-                if child.tag == "hi":
-                    newsub.set("rend", child.get("rend"))
-                elif child.tag == "ref":
-                    if child.get("target") is not None:
-                        newsub.set("target", child.get("target"))
-            # handle line breaks
-            # elif processed_child.tag == 'lb':
-            #    try:
-            #        processed_child.tail = process_node(child, options).tail
-            #    except AttributeError:  # no text
-            #        pass
-            # prepare text
-            # todo: to be moved to handle_textnode()
-            # if text_chars_test(processed_child.text) is False:
-            #    processed_child.text = ''
-            # if text_chars_test(processed_child.tail) is False:
-            #    processed_child.tail = ''
-            # if there are already children
-            # if len(processed_element) > 0:
-            #    if text_chars_test(processed_child.tail) is True:
-            #        newsub.tail = processed_child.text + processed_child.tail
-            #    else:
-            #        newsub.tail = processed_child.text
-            newsub.text, newsub.tail = processed_child.text, processed_child.tail
-            processed_element.append(newsub)
+        try:
+            if child.tag not in potential_tags and child.tag != "done":
+                LOGGER.debug("unexpected in p: %s %s %s", child.tag, child.text, child.tail)
+                # continue
+            # spacing = child.tag in SPACING_PROTECTED  # todo: outputformat.startswith('xml')?
+            # todo: act on spacing here?
+            processed_child = handle_textnode(child, options, comments_fix=False, preserve_spaces=True)
+            if processed_child is not None:
+                # todo: needing attention!
+                if processed_child.tag == "p":
+                    LOGGER.debug("extra p within p: %s %s %s", processed_child.tag, processed_child.text,
+                                processed_child.tail)
+                    if processed_element.text:
+                        processed_element.text += " " + processed_child.text
+                    else:
+                        processed_element.text = processed_child.text
+                    child.tag = "done"
+                    continue
+                # handle formatting
+                newsub = Element(child.tag)
+                if processed_child.tag in P_FORMATTING:
+                    # check depth and clean
+                    if len(processed_child) > 0:
+                        for item in processed_child:  # children are lists
+                            if text_chars_test(item.text) is True:
+                                item.text = " " + item.text
+                            strip_tags(processed_child, item.tag)
+                    # correct attributes
+                    if child.tag == "hi":
+                        newsub.set("rend", child.get("rend"))
+                    elif child.tag == "ref":
+                        if child.get("target") is not None:
+                            newsub.set("target", child.get("target"))
+                # handle line breaks
+                # elif processed_child.tag == 'lb':
+                #    try:
+                #        processed_child.tail = process_node(child, options).tail
+                #    except AttributeError:  # no text
+                #        pass
+                # prepare text
+                # todo: to be moved to handle_textnode()
+                # if text_chars_test(processed_child.text) is False:
+                #    processed_child.text = ''
+                # if text_chars_test(processed_child.tail) is False:
+                #    processed_child.tail = ''
+                # if there are already children
+                # if len(processed_element) > 0:
+                #    if text_chars_test(processed_child.tail) is True:
+                #        newsub.tail = processed_child.text + processed_child.tail
+                #    else:
+                #        newsub.tail = processed_child.text
+                newsub.text, newsub.tail = processed_child.text, processed_child.tail
+                processed_element.append(newsub)
+        except:
+            pass
         child.tag = "done"
     # finish
     if len(processed_element) > 0:
