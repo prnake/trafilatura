@@ -193,6 +193,8 @@ def test_tojson():
     # test json
     mystring = '<html><body><p>ÄÄÄÄÄÄÄÄÄÄÄÄÄÄ</p></body></html>'
     result = extract(mystring, output_format='json', config=ZERO_CONFIG)
+    assert "Ä" in result and result.endswith('}')
+    result = extract(mystring, output_format='json', config=ZERO_CONFIG, with_metadata=True)
     assert result.endswith('}') and '"fingerprint":' in result and '"language":' in result
     assert extract(mystring, output_format='json', include_comments=False, config=ZERO_CONFIG).endswith('}')
 
@@ -299,6 +301,10 @@ def test_formatting():
     assert my_result == '### Title\n**This here is in bold font.**'
     assert extract(my_string, output_format='markdown', config=ZERO_CONFIG) == my_result
     assert '<hi rend="#b">' in etree.tostring(bare_extraction(my_string, output_format='markdown', config=ZERO_CONFIG)["body"], encoding="unicode")
+
+    meta_string = '<html><head><title>Test</title></head><body><p>ABC.</p></body></html>'
+    meta_result = extract(meta_string, output_format='markdown', config=ZERO_CONFIG, with_metadata=True)
+    assert " ".join(meta_result.split()) == "--- title: Test --- ABC."
 
     # space between paragraphs
     my_document = html.fromstring('<html><body><article><h3>Title</h3><p>Paragraph 1</p><p>Paragraph 2</p></article></body></html>')
@@ -525,7 +531,7 @@ def test_links():
     assert '<ref target="testlink.html">link</ref>' in extract(teststring, include_links=True, no_fallback=True, output_format='xml', config=ZERO_CONFIG)
     # test license link
     mydoc = html.fromstring('<html><body><p>Test text under <a rel="license" href="">CC BY-SA license</a>.</p></body></html>')
-    assert 'license="CC BY-SA license"' in extract(mydoc, include_links=True, no_fallback=True, output_format='xml', config=ZERO_CONFIG)
+    assert 'license="CC BY-SA license"' in extract(mydoc, include_links=True, no_fallback=True, output_format='xml', config=ZERO_CONFIG, with_metadata=True)
 
 
 def test_tei():
@@ -798,8 +804,6 @@ def test_extraction_options():
         extract(my_html, json_output=True)
     assert extract(my_html, config=NEW_CONFIG) is None
     assert extract(my_html, config=ZERO_CONFIG) is not None
-    with pytest.raises(ValueError):
-        extract(my_html, with_metadata=True, output_format='xml', config=ZERO_CONFIG)
     assert extract(my_html, only_with_metadata=False, output_format='xml', config=ZERO_CONFIG) is not None
     assert extract(my_html, only_with_metadata=True, output_format='xml', config=ZERO_CONFIG) is None
     assert extract(my_html, target_language='de', config=ZERO_CONFIG) is None
@@ -807,8 +811,9 @@ def test_extraction_options():
     # assert extract(my_html) is None
 
     my_html = '<html><head/><body>' + '<p>ABC def ghi jkl.</p>'*1000 + '<p>Posted on 1st Dec 2019<.</p></body></html>'
-    assert bare_extraction(my_html, config=ZERO_CONFIG)["date"] is not None
-    assert bare_extraction(my_html, config=NEW_CONFIG)["date"] is None
+    assert bare_extraction(my_html, config=ZERO_CONFIG, with_metadata=True)["date"] is not None
+    assert bare_extraction(my_html, config=NEW_CONFIG, with_metadata=True)["date"] is None
+    assert bare_extraction(my_html, config=NEW_CONFIG, with_metadata=False)["date"] is None
 
 
 def test_precision_recall():
@@ -1081,6 +1086,21 @@ def test_table_processing():
     # table headers in non-XML formats
     htmlstring = '<html><body><article><table><tr><th>head 1</th><th>head 2</th></tr><tr><td>1</td><td>2</td></tr></table></article></body></html>'
     assert "---|---|" in extract(htmlstring, no_fallback=True, output_format='txt', config=ZERO_CONFIG, include_tables=True)
+
+    # remove new lines in table cells in text format
+    htmlstring = '<html><body><article><table><tr><td>cell<br>1</td><td>cell<p>2</p></td></tr></table></article></body></html>'
+    result = extract(htmlstring, no_fallback=True, output_format='txt', config=ZERO_CONFIG, include_tables=True)
+    assert "cell 1 | cell 2 |" in result
+
+    # only one header row is allowed in text format
+    htmlstring = '<html><body><article><table><tr><th>a</th><th>b</th></tr><tr><th>c</th><th>d</th></tr></table></article></body></html>'
+    result = extract(htmlstring, no_fallback=True, output_format='txt', config=ZERO_CONFIG, include_tables=True)
+    assert result.count("---|") == 2
+
+    # handle colspan by appending columns in text format
+    htmlstring = '<html><body><article><table><tr><td colspan="2">a</td><td>b</td></tr><tr><td>c</td><td>d</td><td>e</td></tr></table></article></body></html>'
+    result = extract(htmlstring, no_fallback=True, output_format='txt', config=ZERO_CONFIG, include_tables=True)
+    assert "a | b | |" in result
 
 
 def test_list_processing():
@@ -1411,6 +1431,60 @@ def test_is_probably_readerable():
     assert not is_probably_readerable(doc)
 
 
+def test_html_conversion():
+    "Test conversion from internal XML to HTML output."
+    xml = '''<xml>
+    <list>
+        <item>Item 1</item>
+        <item>Item 2</item>
+    </list>
+    <p>Text</p>
+    <head rend="h1">Heading 1</head>
+    <head rend="h2">Heading 2</head>
+    <hi rend="#i">Italic</hi>
+    <hi rend="#b">Bold</hi>
+    <ref target="https://example.com">Link</ref>
+</xml>'''
+    tree = etree.fromstring(xml)
+    html_tree = trafilatura.htmlprocessing.convert_to_html(copy(tree))
+    expected_html = '''<html><body>
+    <ul>
+        <li>Item 1</li>
+        <li>Item 2</li>
+    </ul>
+    <p>Text</p>
+    <h1>Heading 1</h1>
+    <h2>Heading 2</h2>
+    <i>Italic</i>
+    <strong>Bold</strong>
+    <a href="https://example.com">Link</a>
+</body></html>'''
+    assert etree.tostring(html_tree, method='html').decode() == expected_html
+
+    html = "<html><body><article><h1>Title</h1><p>Text.</p></article></body></html>"
+    excepted_html = """<html>
+  <body>
+    <h1>Title</h1>
+    <p>Text.</p>
+  </body>
+</html>"""
+    result = extract(html, output_format="html", config=ZERO_CONFIG)
+    assert result == excepted_html
+
+    html = "<html><body><article><h1>Title 1</h1><p>Text.</p></article></body></html>"
+    excepted_html = """<html>
+  <head>
+    <meta name="title" content="Title 1"/>
+    <meta name="fingerprint" content="f6fd180b8fbe3670"/>
+  </head>
+  <body>
+    <h1>Title 1</h1>
+    <p>Text.</p>
+  </body>
+</html>"""
+    result = extract(html, output_format="html", config=ZERO_CONFIG, with_metadata=True)
+    assert result == excepted_html
+
 
 if __name__ == '__main__':
     test_config_loading()
@@ -1437,3 +1511,4 @@ if __name__ == '__main__':
     test_large_doc_performance()
     test_lang_detection()
     test_is_probably_readerable()
+    test_html_conversion()
