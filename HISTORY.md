@@ -1,6 +1,51 @@
 ## History / Changelog
 
 
+### 1.12.0
+
+Breaking change:
+- enforce fixed list of output formats, deprecate `-out` on the CLI (#647)
+
+Faster, more accurate extraction:
+- review link and structure checks (#653)
+- improve justext fallback (#652)
+- baseline: prevent LXML error in JSON-LD (#643), do not use as backup extraction (#646)
+- review XPaths for undesirable content (#645)
+
+Bugfixes and maintenance:
+- CLI fix: markdown format should trigger `include_formatting` (#649)
+- images fix: use a length threshold on src attribute (#654)
+- XML-TEI: replace RelaxNG by DTD, remove pickle, and update (#655)
+- formatting & markdown fix: add newlines (#656)
+- table fix: prevent `MemoryError` & `ValueError` during conversion to text (#658)
+
+Documentation:
+- update `crawls.rst`: `known` is an unexpected argument, by @tommytyc in #638
+
+
+### 1.11.0
+
+Breaking change:
+- metadata now skipped by default (#613), to trigger inclusion in all output formats:
+   - `with_metadata=True` (Python)
+   - `--with-metadata` (CLI)
+
+Extraction:
+- add HTML as output format (#614)
+- better and faster baseline extraction (#619)
+- better handling of HTML/XML elements (#628)
+- XPath rules added with @felipehertzer (#540)
+- fix: avoid faulty readability_lxml content (#635)
+
+Evaluation:
+- new scripts and data with @LydiaKoerber (#606, #615)
+- additional data with @swetepete (#197)
+
+Maintenance:
+- docs extended and updated, added page on deduplication (#618)
+- review code, add tests and types in part of the submodules (#620, #623, #624, #625)
+
+
 ### 1.10.0
 
 Breaking changes:

@@ -39,7 +39,7 @@ def test_parser():
     assert args.URL == "https://www.example.org"
     args = cli.map_args(args)
     assert args.output_format == "xmltei"
-    testargs = ["", "-out", "csv", "--no-tables", "-u", "https://www.example.org"]
+    testargs = ["", "--output-format", "csv", "--no-tables", "-u", "https://www.example.org"]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
     assert args.fast is False
@@ -129,6 +129,9 @@ def test_parser():
     with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
         cli.map_args(cli.parse_args(testargs))
     testargs = ["", "--outputdir", "test2"]
+    with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
+        cli.map_args(cli.parse_args(testargs))
+    testargs = ["", "-out", "xml"]
     with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
         cli.map_args(cli.parse_args(testargs))
 
@@ -224,13 +227,14 @@ def test_sysoutput():
     else:
         assert cli_utils.determine_counter_dir("testdir", 0) == "testdir\\1"
     # test file writing
-    testargs = ["", "--csv", "-o", "/dev/null/", "-b", "/dev/null/"]
+    testargs = ["", "--markdown", "-o", "/dev/null/", "-b", "/dev/null/"]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
     result = "DADIDA"
     cli_utils.write_result(result, args)
     # process with backup directory and no counter
     options = args_to_extractor(args)
+    assert options.format == "markdown" and options.formatting is True
     assert cli_utils.process_result("DADIDA", args, None, options) is None
     # test keeping dir structure
     testargs = ["", "-i", "myinputdir/", "-o", "test/", "--keep-dirs"]
@@ -329,7 +333,7 @@ def test_cli_pipeline():
         args = cli.parse_args(testargs)
     cli_utils.archive_html("00Test", args)
     # test date-based exclusion
-    testargs = ["", "-out", "xml", "--only-with-metadata"]
+    testargs = ["", "--output-format", "xml", "--only-with-metadata"]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
     with open(
@@ -337,7 +341,7 @@ def test_cli_pipeline():
     ) as f:
         teststring = f.read()
     assert cli.examine(teststring, args) is None
-    testargs = ["", "-out", "xml", "--only-with-metadata", "--precision"]
+    testargs = ["", "--output-format", "xml", "--only-with-metadata", "--precision"]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
     with open(
@@ -346,7 +350,7 @@ def test_cli_pipeline():
         teststring = f.read()
     assert cli.examine(teststring, args) is None
     # test JSON output
-    testargs = ["", "-out", "json", "--recall"]
+    testargs = ["", "--output-format", "json", "--recall"]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
     with open(

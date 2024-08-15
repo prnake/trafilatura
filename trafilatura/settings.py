@@ -6,18 +6,24 @@ Listing a series of settings that are applied module-wide.
 from configparser import ConfigParser
 from datetime import datetime
 from html import unescape
+from typing import Dict, Optional
 
 try:
     from os import sched_getaffinity
+    HAS_SCHED = True
 except ImportError:
-    sched_getaffinity = None
     from os import cpu_count
+    HAS_SCHED = False
 
 from pathlib import Path
 
 from lxml.etree import XPath
 
 from .utils import line_processing
+
+
+SUPPORTED_FMT_CLI = ["csv", "json", "html", "markdown", "txt", "xml", "xmltei"]
+SUPPORTED_FORMATS = set(SUPPORTED_FMT_CLI) | {"python"}  # for bare_extraction() only
 
 
 def use_config(filename=None, config=None):
@@ -77,12 +83,12 @@ class Extractor:
                  tables=True, dedup=False, lang=None, max_tree_size=None,
                  url=None, source=None, with_metadata=False, only_with_metadata=False, tei_validation=False,
                  author_blacklist=None, url_blacklist=None, date_params=None):
+        self._set_format(output_format)
         self._add_config(config)
-        self.format = output_format
         self.fast = fast
         self.focus = "recall" if recall else "precision" if precision else "balanced"
         self.comments = comments
-        self.formatting = formatting or output_format == "markdown"
+        self.formatting = formatting or self.format == "markdown"
         self.links = links
         self.images = images
         self.tables = tables
@@ -100,6 +106,12 @@ class Extractor:
         self.date_params = (date_params or
                             set_date_params(self.config.getboolean('DEFAULT', 'EXTENSIVE_DATE_SEARCH')))
 
+    def _set_format(self, chosen_format: str) -> None:
+        "Store the format if supported and raise an error otherwise."
+        if chosen_format not in SUPPORTED_FORMATS:
+            raise AttributeError(f"Cannot set format, must be one of: {', '.join(sorted(SUPPORTED_FORMATS))}")
+        self.format = chosen_format
+
     def _add_config(self, config):
         "Store options loaded from config file."
         for key, value in CONFIG_MAPPING.items():
@@ -111,13 +123,14 @@ def args_to_extractor(args, url=None):
     "Derive extractor configuration from CLI args."
     options = Extractor(
                   config=use_config(filename=args.config_file), output_format=args.output_format,
+                  formatting=args.formatting,
                   precision=args.precision, recall=args.recall,
                   comments=args.no_comments, tables=args.no_tables,
                   dedup=args.deduplicate, lang=args.target_language, url=url,
                   with_metadata=args.with_metadata, only_with_metadata=args.only_with_metadata,
                   tei_validation=args.validate_tei
               )
-    for attr in ("fast", "formatting", "images", "links"):
+    for attr in ("fast", "images", "links"):
         setattr(options, attr, getattr(args, attr))
     return options
 
@@ -176,7 +189,7 @@ class Document:  # consider dataclasses for Python 3.7+
                 value = line_processing(unescape(value))
                 setattr(self, slot, value)
 
-    def as_dict(self) -> None:
+    def as_dict(self) -> Dict[str, Optional[str]]:
         "Convert the document to a dictionary."
         return {
             attr: getattr(self, attr, None)
@@ -185,7 +198,7 @@ class Document:  # consider dataclasses for Python 3.7+
 
 
 # Safety checks
-PARALLEL_CORES = min(len(sched_getaffinity(0)) if sched_getaffinity else cpu_count(), 16)  # 16 processes at most
+PARALLEL_CORES = min(len(sched_getaffinity(0)) if HAS_SCHED else cpu_count(), 16)  # 16 processes at most
 LRU_SIZE = 4096
 
 # Files
@@ -227,7 +240,7 @@ MANUALLY_STRIPPED = [
 ]
 # 'center', 'rb', 'wbr'
 
-BASIC_CLEAN_XPATH = XPath(".//aside|.//footer|.//script|.//style")
+BASIC_CLEAN_XPATH = XPath(".//aside|.//div[contains(@class|@id, 'footer')]|.//footer|.//script|.//style")
 
 TAG_CATALOG = frozenset(['blockquote', 'code', 'del', 'head', 'hi', 'lb', 'list', 'p', 'pre', 'quote'])
 # + list(CUT_EMPTY_ELEMS)

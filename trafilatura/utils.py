@@ -11,6 +11,7 @@ import zlib
 
 from functools import lru_cache
 from itertools import islice
+from typing import Any, Optional
 from unicodedata import normalize
 
 # response compression
@@ -38,7 +39,9 @@ try:
     from cchardet import detect as cchardet_detect
 except ImportError:
     cchardet_detect = None
+
 from charset_normalizer import from_bytes
+from lxml.etree import _Element
 from lxml.html import HtmlElement, HTMLParser, fromstring
 # response types
 from urllib3.response import HTTPResponse
@@ -148,13 +151,13 @@ def detect_encoding(bytesobject):
     return [g for g in guesses if g not in UNICODE_ALIASES]
 
 
-def decode_response(content):
+def decode_response(content) -> None:
     """Read the urllib3 object corresponding to the server response,
        try to guess its encoding and decode it to return a unicode string"""
     raise ValueError("decode_response() is deprecated, use decode_file() instead.")
 
 
-def decode_file(filecontent):
+def decode_file(filecontent) -> str:
     """Check if the bytestring could be GZip and eventually decompress it,
        guess bytestring encoding and try to decode to Unicode string.
        Resort to destructive conversion otherwise."""
@@ -208,7 +211,7 @@ def fromstring_bytes(htmlobject):
     return tree
 
 
-def load_html(htmlobject):
+def load_html(htmlobject: Any) -> Optional[HtmlElement]:
     """Load object given as input and validate its type
     (accepted: lxml.html tree, trafilatura/urllib3 response, bytestring and string)
     """
@@ -290,7 +293,7 @@ def line_processing(line, preserve_space=False, trailing_space=False):
     return new_line
 
 
-def sanitize(text, preserve_space=False, trailing_space=False):
+def sanitize(text: str, preserve_space: bool = False, trailing_space: bool = False) -> Optional[str]:
     '''Convert text and discard incompatible and invalid characters'''
     # consider all text as a single line
     if trailing_space:
@@ -302,7 +305,7 @@ def sanitize(text, preserve_space=False, trailing_space=False):
         return None
 
 
-def sanitize_tree(tree):
+def sanitize_tree(tree: _Element) -> _Element:
     '''Trims spaces, removes control characters and normalizes unicode'''
     for elem in tree.iter():
         parent = elem.getparent()
@@ -327,7 +330,7 @@ def sanitize_tree(tree):
 
 
 @lru_cache(maxsize=1024)
-def trim(string):
+def trim(string: str) -> Optional[str]:
     '''Remove unnecessary spaces within a text string'''
     try:
         # remove newlines that are not related to punctuation or markup + proper trimming
@@ -339,9 +342,11 @@ def trim(string):
 
 
 def is_image_file(imagesrc):
-    '''Check if the observed string corresponds to a valid image extension,
-       return False otherwise'''
-    return bool(imagesrc is not None and IMAGE_EXTENSION.search(imagesrc))
+    '''Check if the observed string corresponds to a valid image extension.
+       Use a length threshold and apply a regex on the content.'''
+    if imagesrc is None or len(imagesrc) > 8192:
+        return False
+    return bool(IMAGE_EXTENSION.search(imagesrc))
 
 
 def make_chunks(iterable, n):
@@ -360,7 +365,7 @@ def make_chunks(iterable, n):
     #    yield batch
 
 
-def is_acceptable_length(my_len, options):
+def is_acceptable_length(my_len, options) -> bool:
     "Check if the document length is within acceptable boundaries."
     if my_len < options.min_file_size:
         LOGGER.error("too small/incorrect for URL %s", options.url)
@@ -426,14 +431,14 @@ def language_filter(temp_text, temp_comments, target_language, docmeta):
     return False, docmeta
 
 
-def textfilter(element):
+def textfilter(element: _Element) -> bool:
     '''Filter out unwanted text'''
     testtext = element.tail if element.text is None else element.text
     # to check: line len → continue if len(line) <= 5
     return not text_chars_test(testtext) or any(map(RE_FILTER.match, testtext.splitlines()))
 
 
-def text_chars_test(string):
+def text_chars_test(string: Optional[str]) -> bool:
     '''Determine if a string is only composed of spaces and/or control characters'''
     # or not re.search(r'\w', string)
     # return string is not None and len(string) != 0 and not string.isspace()

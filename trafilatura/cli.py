@@ -17,7 +17,7 @@ from .cli_utils import (cli_crawler, cli_discovery, examine,
                         file_processing_pipeline, load_blacklist,
                         load_input_dict, probe_homepage,
                         url_processing_pipeline, write_result)
-from .settings import PARALLEL_CORES
+from .settings import PARALLEL_CORES, SUPPORTED_FMT_CLI
 
 # fix output encoding on some systems
 try:
@@ -138,11 +138,11 @@ def add_args(parser):
                         help="don't output any table elements",
                         action="store_false")  # false = no tables
     group4.add_argument("--only-with-metadata",
-                        help="only output those documents with title, URL and date (for formats supporting metadata)",
+                        help="only output those documents with title, URL and date",
                         action="store_true")
     group4.add_argument("--with-metadata",
-                        help=argparse.SUPPRESS,
-                        action="store_true")   # will be deprecated
+                        help="extract and add metadata to the output",
+                        action="store_true")
     group4.add_argument("--target-language",
                         help="select a target language (ISO 639-1 codes)",
                         type=str)
@@ -160,9 +160,12 @@ def add_args(parser):
                         action="store_true")
 
     # https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.add_mutually_exclusive_group
-    group5_ex.add_argument('-out', '--output-format',
+    group5_ex.add_argument("-out",
+                        help=argparse.SUPPRESS,
+                        choices=SUPPORTED_FMT_CLI)
+    group5_ex.add_argument('--output-format',
                         help="determine output format",
-                        choices=['txt', 'csv', 'html', 'json', 'markdown', 'xml', 'xmltei'],
+                        choices=SUPPORTED_FMT_CLI,
                         default='txt')
     group5_ex.add_argument("--csv",
                         help="shorthand for CSV output",
@@ -238,6 +241,10 @@ def map_args(args):
     if args.hash_as_name:
         raise ValueError(
               "--hash-as-name is deprecated, hashes are used by default",
+              )
+    if args.out:
+        raise ValueError(
+              "-out is deprecated, use --output-format instead",
               )
     return args
 

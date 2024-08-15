@@ -16,10 +16,10 @@ from .htmlprocessing import (delete_by_link_density, handle_textnode,
                              prune_unwanted_nodes)
 from .settings import TAG_CATALOG
 from .utils import FORMATTING_PROTECTED, is_image_file, text_chars_test
+from .xml import delete_element
 from .xpaths import (BODY_XPATH, COMMENTS_DISCARD_XPATH, COMMENTS_XPATH,
                      DISCARD_IMAGE_ELEMENTS, OVERALL_DISCARD_XPATH,
-                     PAYWALL_DISCARD_XPATH, PRECISION_DISCARD_XPATH,
-                     TEASER_DISCARD_XPATH)
+                     PRECISION_DISCARD_XPATH, TEASER_DISCARD_XPATH)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -108,6 +108,7 @@ def handle_formatting(element, options):
 
 
 def add_sub_element(new_child_elem, subelem, processed_subchild):
+    "Add a sub-element to an existing child element."
     sub_child_elem = SubElement(new_child_elem, processed_subchild.tag)
     sub_child_elem.text, sub_child_elem.tail = processed_subchild.text, processed_subchild.tail
     for attr in subelem.attrib:
@@ -115,6 +116,7 @@ def add_sub_element(new_child_elem, subelem, processed_subchild):
 
 
 def process_nested_elements(child, new_child_elem, options):
+    "Iterate through an element child and rewire its descendants."
     new_child_elem.text = child.text
     for subelem in child.iterdescendants("*"):
         if subelem.tag == "list":
@@ -130,16 +132,18 @@ def process_nested_elements(child, new_child_elem, options):
 
 
 def update_elem_rendition(elem, new_elem):
-    # set attribute
+    "Copy the rend attribute from an existing element to a new one."
     if elem.get("rend") is not None:
         new_elem.set("rend", elem.get("rend"))
 
 
 def is_text_element(elem):
+    "Find if the element contains text."
     return elem is not None and text_chars_test(''.join(elem.itertext())) is True
 
 
 def define_newelem(processed_elem, orig_elem):
+    "Create a new sub-element if necessary."
     if processed_elem is not None:
         childelem = SubElement(orig_elem, processed_elem.tag)
         childelem.text, childelem.tail = processed_elem.text, processed_elem.tail
@@ -166,7 +170,7 @@ def handle_lists(element, options):
                 processed_element.append(new_child_elem)
         else:
             process_nested_elements(child, new_child_elem, options)
-            new_child_elem_children = [el for el in new_child_elem.getchildren() if el.tag != "done"]
+            new_child_elem_children = [el for el in new_child_elem if el.tag != "done"]
             if not new_child_elem.text.strip():
                 new_child_elem.text = new_child_elem_children[0].text
                 new_child_elem_children[0].text = ""
@@ -333,7 +337,7 @@ def handle_paragraphs(element, potential_tags, options):
         last_elem = processed_element[-1]
         # clean trailing lb-elements
         if last_elem.tag == "lb" and last_elem.tail is None:
-            last_elem.getparent().remove(last_elem)
+            delete_element(last_elem)
         return processed_element
     if processed_element.text:
         return processed_element
@@ -341,7 +345,7 @@ def handle_paragraphs(element, potential_tags, options):
     return None
 
 
-def define_cell_type(element, is_header):
+def define_cell_type(is_header):
     "Determine cell element type and mint new element."
     # define tag
     cell_element = Element("cell")
@@ -377,7 +381,7 @@ def handle_table(table_elem, potential_tags, options):
         elif subelement.tag in TABLE_ELEMS:
             is_header = subelement.tag == "th" and not seen_header_row
             seen_header = seen_header or is_header
-            new_child_elem = define_cell_type(subelement, is_header)
+            new_child_elem = define_cell_type(is_header)
             # process
             if len(subelement) == 0:
                 processed_cell = process_node(subelement, options)
@@ -391,7 +395,7 @@ def handle_table(table_elem, potential_tags, options):
                     if child.tag in TABLE_ALL:
                         # todo: define attributes properly
                         if child.tag in TABLE_ELEMS:
-                            # subcell_elem = define_cell_type(subelement)
+                            # subcell_elem = define_cell_type(is_header)
                             child.tag = "cell"
                         processed_subchild = handle_textnode(child, options, preserve_spaces=True, comments_fix=True)
                     # todo: lists in table cells
@@ -515,7 +519,6 @@ def prune_unwanted_sections(tree, potential_tags, options):
     favor_precision = options.focus == "precision"
     # prune the rest
     tree = prune_unwanted_nodes(tree, OVERALL_DISCARD_XPATH, with_backup=True)
-    tree = prune_unwanted_nodes(tree, PAYWALL_DISCARD_XPATH)
     # decide if images are preserved
     if 'graphic' not in potential_tags:
         tree = prune_unwanted_nodes(tree, DISCARD_IMAGE_ELEMENTS)
@@ -524,17 +527,24 @@ def prune_unwanted_sections(tree, potential_tags, options):
         tree = prune_unwanted_nodes(tree, TEASER_DISCARD_XPATH)
         if favor_precision:
             tree = prune_unwanted_nodes(tree, PRECISION_DISCARD_XPATH)
-    # remove elements by link density
-    tree = delete_by_link_density(tree, 'div', backtracking=True, favor_precision=favor_precision)
-    tree = delete_by_link_density(tree, 'list', backtracking=False, favor_precision=favor_precision)
-    tree = delete_by_link_density(tree, 'p', backtracking=False, favor_precision=favor_precision)
+    # remove elements by link density, several passes
+    for _ in range(2):
+        tree = delete_by_link_density(tree, 'div', backtracking=True, favor_precision=favor_precision)
+        tree = delete_by_link_density(tree, 'list', backtracking=False, favor_precision=favor_precision)
+        tree = delete_by_link_density(tree, 'p', backtracking=False, favor_precision=favor_precision)
+    # tables
+    if 'table' in potential_tags or favor_precision:
+        # tree = delete_by_link_density(tree, 'table', backtracking=False, favor_precision=favor_precision)
+        for elem in tree.iter('table'):
+            if link_density_test_tables(elem) is True:
+                delete_element(elem, keep_tail=False)
     # also filter fw/head, table and quote elements?
     if favor_precision:
         # delete trailing titles
         while len(tree) > 0 and (tree[-1].tag == 'head'):
-            tree[-1].getparent().remove(tree[-1])
-        tree = delete_by_link_density(tree, 'head', backtracking=False)  # favor_precision=favor_precision
-        tree = delete_by_link_density(tree, 'quote', backtracking=False)  # favor_precision=favor_precision
+            delete_element(tree[-1], keep_tail=False)
+        tree = delete_by_link_density(tree, 'head', backtracking=False, favor_precision=True)
+        tree = delete_by_link_density(tree, 'quote', backtracking=False, favor_precision=True)
     return tree
 
 
@@ -556,12 +566,6 @@ def _extract(tree, options):
             continue
         # prune the subtree
         subtree = prune_unwanted_sections(subtree, potential_tags, options)
-        # second pass?
-        # subtree = delete_by_link_density(subtree, 'list', backtracking=False, favor_precision=options.focus == "precision")
-        if 'table' in potential_tags or options.focus == "precision":
-            for elem in subtree.iter('table'):
-                if link_density_test_tables(elem) is True:
-                    elem.getparent().remove(elem)
         # skip if empty tree
         if len(subtree) == 0:
             continue
@@ -588,7 +592,7 @@ def _extract(tree, options):
         result_body.extend([el for el in (handle_textelem(e, potential_tags, options) for e in subelems) if el is not None])
         # remove trailing titles
         while len(result_body) > 0 and (result_body[-1].tag in NOT_AT_THE_END):
-            result_body[-1].getparent().remove(result_body[-1])
+            delete_element(result_body[-1], keep_tail=False)
         # exit the loop if the result has children
         if len(result_body) > 1:
             LOGGER.debug(expr)
@@ -665,7 +669,7 @@ def extract_comments(tree, options):
         if len(comments_body) > 0:  # if it has children
             LOGGER.debug(expr)
             # remove corresponding subtree
-            subtree.getparent().remove(subtree)
+            delete_element(subtree, keep_tail=False)
             break
     # lengths
     temp_comments = " ".join(comments_body.itertext()).strip()

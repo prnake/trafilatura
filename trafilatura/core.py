@@ -25,6 +25,9 @@ from .xpaths import REMOVE_COMMENTS_XPATH
 
 LOGGER = logging.getLogger(__name__)
 
+DEPRECATED_ARGS = ('csv_output', 'json_output', 'tei_output', 'xml_output')
+TXT_FORMATS = {"markdown", "txt"}
+
 
 def determine_returnstring(document, options):
     '''Convert XML tree to chosen format, clean the result and output it as a string'''
@@ -68,6 +71,23 @@ def determine_returnstring(document, options):
     return normalize_unicode(returnstring)
 
 
+def trafilatura_sequence(cleaned_tree, cleaned_tree_backup, tree_backup, options):
+    "Execute the standard cascade of extractors used by Trafilatura."
+    # Trafilatura's main extractor
+    postbody, temp_text, len_text = extract_content(cleaned_tree, options)
+
+    # comparison with external extractors
+    if not options.fast:
+        postbody, temp_text, len_text = compare_extraction(cleaned_tree_backup, deepcopy(tree_backup), postbody, temp_text, len_text, options)
+
+    # rescue: baseline extraction on original/dirty tree
+    if len_text < options.min_extracted_size and not options.focus == "precision":
+        postbody, temp_text, len_text = baseline(deepcopy(tree_backup))
+        LOGGER.debug('non-clean extracted length: %s (extraction)', len_text)
+
+    return postbody, temp_text, len_text
+
+
 def bare_extraction(filecontent, url=None, no_fallback=False,  # fast=False,
                     favor_precision=False, favor_recall=False,
                     include_comments=True, output_format="python", target_language=None,
@@ -89,7 +109,7 @@ def bare_extraction(filecontent, url=None, no_fallback=False,  # fast=False,
         include_comments: Extract comments along with the main text.
         output_format: Define an output format, Python being the default
             and the interest of this internal function.
-            Other values: "csv", "json", "markdown", "txt", "xml", and "xmltei".
+            Other values: "csv", "html", "json", "markdown", "txt", "xml", and "xmltei".
         target_language: Define a language to discard invalid documents (ISO 639-1 format).
         include_tables: Take into account information within the HTML <table> element.
         include_images: Take images into account (experimental).
@@ -98,7 +118,7 @@ def bare_extraction(filecontent, url=None, no_fallback=False,  # fast=False,
         include_links: Keep links along with their targets (experimental).
         deduplicate: Remove duplicate segments and documents.
         date_extraction_params: Provide extraction parameters to htmldate as dict().
-        with_metadata: Extract metadata fields and add them to the output (available soon).
+        with_metadata: Extract metadata fields and add them to the output.
         only_with_metadata: Only keep documents featuring all essential metadata
             (date, title, url).
         max_tree_size: Discard documents with too many elements.
@@ -176,11 +196,8 @@ def bare_extraction(filecontent, url=None, no_fallback=False,  # fast=False,
                 prune_xpath = [prune_xpath]
             tree = prune_unwanted_nodes(tree, [XPath(x) for x in prune_xpath])
 
-        # backup for further processing
-        tree_backup = copy(tree)
-
-        # clean
-        cleaned_tree = tree_cleaning(tree, options)
+        # clean and backup for further processing
+        cleaned_tree = tree_cleaning(copy(tree), options)
         cleaned_tree_backup = copy(cleaned_tree)
 
         # convert tags, the rest does not work without conversion
@@ -194,17 +211,7 @@ def bare_extraction(filecontent, url=None, no_fallback=False,  # fast=False,
         if options.focus == "precision":
             cleaned_tree = prune_unwanted_nodes(cleaned_tree, REMOVE_COMMENTS_XPATH)
 
-        # extract content
-        postbody, temp_text, len_text = extract_content(cleaned_tree, options)
-
-        # compare if necessary
-        if not options.fast:
-            postbody, temp_text, len_text = compare_extraction(cleaned_tree_backup, deepcopy(tree_backup), postbody, temp_text, len_text, options)
-        # add baseline as additional fallback
-        # rescue: try to use original/dirty tree # and favor_precision is False=?
-        if len_text < options.min_extracted_size:
-            postbody, temp_text, len_text = baseline(deepcopy(tree_backup))
-            LOGGER.debug('non-clean extracted length: %s (extraction)', len_text)
+        postbody, temp_text, len_text = trafilatura_sequence(cleaned_tree, cleaned_tree_backup, tree, options)
 
         # tree size sanity check
         if options.max_tree_size:
@@ -278,7 +285,7 @@ def extract(filecontent, url=None, record_id=None, no_fallback=False,
         favor_recall: when unsure, prefer more text.
         include_comments: Extract comments along with the main text.
         output_format: Define an output format:
-            "csv", "json", "markdown", "txt", "xml", and "xmltei".
+            "csv", "html", "json", "markdown", "txt", "xml", and "xmltei".
         tei_validation: Validate the XML-TEI output with respect to the TEI standard.
         target_language: Define a language to discard invalid documents (ISO 639-1 format).
         include_tables: Take into account information within the HTML <table> element.
@@ -288,7 +295,7 @@ def extract(filecontent, url=None, record_id=None, no_fallback=False,
         include_links: Keep links along with their targets (experimental).
         deduplicate: Remove duplicate segments and documents.
         date_extraction_params: Provide extraction parameters to htmldate as dict().
-        with_metadata: Extract metadata fields and add them to the output (available soon).
+        with_metadata: Extract metadata fields and add them to the output.
         only_with_metadata: Only keep documents featuring all essential metadata
             (date, title, url).
         max_tree_size: Discard documents with too many elements.
@@ -304,16 +311,10 @@ def extract(filecontent, url=None, record_id=None, no_fallback=False,
         A string in the desired format or None.
 
     """
-    # older, deprecated functions
-    if kwargs and any([
-        # output formats
-            'csv_output' in kwargs,
-            'json_output' in kwargs,
-            'tei_output' in kwargs,
-            'xml_output' in kwargs
-        ]):
-        raise NameError(
-            'Deprecated argument: use output_format instead, e.g. output_format="xml"'
+    # older, deprecated functions still found in tutorials
+    if kwargs and any(arg in kwargs for arg in DEPRECATED_ARGS):
+        raise ValueError(
+            'Deprecated argument: use output_format, e.g. output_format="xml"'
             )
 
     # regroup extraction options
@@ -330,9 +331,6 @@ def extract(filecontent, url=None, record_id=None, no_fallback=False,
                       date_params=date_extraction_params
                   )
 
-    # markdown switch
-    include_formatting = include_formatting or output_format == "markdown"
-
     # extraction
     try:
         document = bare_extraction(
@@ -347,7 +345,10 @@ def extract(filecontent, url=None, record_id=None, no_fallback=False,
     if document is None:
         return None
 
-    if options.format not in ("markdown", "txt"):
+    if options.format not in TXT_FORMATS:
+        # control output
+        if options.format == "python":
+            raise ValueError("'python' format only usable in bare_extraction() function")
         # add record ID to metadata
         document.id = record_id
         # calculate fingerprint
