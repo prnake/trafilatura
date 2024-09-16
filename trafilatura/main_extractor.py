@@ -170,11 +170,10 @@ def handle_lists(element, options):
                 processed_element.append(new_child_elem)
         else:
             process_nested_elements(child, new_child_elem, options)
-            new_child_elem_children = [el for el in new_child_elem if el.tag != "done"]
-            if not new_child_elem.text.strip():
-                new_child_elem.text = new_child_elem_children[0].text
-                new_child_elem_children[0].text = ""
             if child.tail is not None and child.tail.strip():
+                new_child_elem_children = [
+                    el for el in new_child_elem if el.tag != "done"
+                ]
                 if new_child_elem_children:
                     last_subchild = new_child_elem_children[-1]
                     if last_subchild.tail is None or not last_subchild.tail.strip():
