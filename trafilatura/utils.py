@@ -4,19 +4,29 @@ Module bundling functions related to HTML and text processing,
 content filtering and language detection.
 """
 
-import gzip
+try:
+    import gzip
+    HAS_GZIP = True
+except ImportError:
+    HAS_GZIP = False
+
 import logging
 import re
-import zlib
+
+try:
+    import zlib
+    HAS_ZLIB = True
+except ImportError:
+    HAS_ZLIB = False
 
 from functools import lru_cache
 from itertools import islice
-from typing import Any, Optional
+from typing import Any, cast, List, Literal, Optional, Tuple, Union
 from unicodedata import normalize
 
 # response compression
 try:
-    import brotli
+    import brotli  # type: ignore
     HAS_BROTLI = True
 except ImportError:
     HAS_BROTLI = False
@@ -29,14 +39,14 @@ except ImportError:
 
 # language detection
 try:
-    import py3langid
+    import py3langid  # type: ignore
     LANGID_FLAG = True
 except ImportError:
     LANGID_FLAG = False
 
 # CChardet is faster and can be more accurate
 try:
-    from cchardet import detect as cchardet_detect
+    from cchardet import detect as cchardet_detect  # type: ignore
 except ImportError:
     cchardet_detect = None
 
@@ -51,7 +61,7 @@ LOGGER = logging.getLogger(__name__)
 
 UNICODE_ALIASES = {'utf-8', 'utf_8'}
 
-DOCTYPE_TAG = re.compile("^< ?! ?DOCTYPE.+?/ ?>", re.I)
+DOCTYPE_TAG = re.compile("^< ?! ?DOCTYPE[^>]*/[^<]*>", re.I)
 FAULTY_HTML = re.compile(r"(<html.*?)\s*/>", re.I)
 HTML_STRIP_TAGS = re.compile(r'(<!--.*?-->|<[^>]*>)')
 
@@ -81,7 +91,7 @@ RE_FILTER = re.compile(r'\W*(Drucken|E-?Mail|Facebook|Flipboard|Google|Instagram
 # COMMENTS_BLACKLIST = ('( Abmelden / Ändern )') # Fill in your details below|Trage deine Daten unten|Kommentar verfassen|Bitte logge dich|Hinterlasse einen Kommentar| to %s| mit %s)
 
 
-def handle_compressed_file(filecontent):
+def handle_compressed_file(filecontent: bytes) -> bytes:
     """
     Don't trust response headers and try to decompress a binary string
     with a cascade of installed packages. Use magic numbers when available.
@@ -90,7 +100,7 @@ def handle_compressed_file(filecontent):
         return filecontent
 
     # source: https://stackoverflow.com/questions/3703276/how-to-tell-if-a-file-is-gzip-compressed
-    if filecontent[:3] == b"\x1f\x8b\x08":
+    if HAS_GZIP and filecontent[:3] == b"\x1f\x8b\x08":
         try:
             return gzip.decompress(filecontent)
         except Exception:  # EOFError, OSError, gzip.BadGzipFile
@@ -104,20 +114,21 @@ def handle_compressed_file(filecontent):
     # try brotli
     if HAS_BROTLI:
         try:
-            return brotli.decompress(filecontent)
+            return brotli.decompress(filecontent)  # type: ignore[no-any-return]
         except brotli.error:
             pass  # logging.debug('invalid Brotli file')
     # try zlib/deflate
-    try:
-        return zlib.decompress(filecontent)
-    except zlib.error:
-        pass
+    if HAS_ZLIB:
+        try:
+            return zlib.decompress(filecontent)
+        except zlib.error:
+            pass
 
     # return content unchanged if decompression failed
     return filecontent
 
 
-def isutf8(data):
+def isutf8(data: bytes) -> bool:
     """Simple heuristic to determine if a bytestring uses standard unicode encoding"""
     try:
         data.decode('UTF-8')
@@ -126,7 +137,7 @@ def isutf8(data):
     return True
 
 
-def detect_encoding(bytesobject):
+def detect_encoding(bytesobject: bytes) -> List[str]:
     """"Read all input or first chunk and return a list of encodings"""
     # alternatives: https://github.com/scrapy/w3lib/blob/master/w3lib/encoding.py
     # unicode-test
@@ -151,20 +162,15 @@ def detect_encoding(bytesobject):
     return [g for g in guesses if g not in UNICODE_ALIASES]
 
 
-def decode_response(content) -> None:
-    """Read the urllib3 object corresponding to the server response,
-       try to guess its encoding and decode it to return a unicode string"""
-    raise ValueError("decode_response() is deprecated, use decode_file() instead.")
-
-
-def decode_file(filecontent) -> str:
+def decode_file(filecontent: Union[bytes, str]) -> str:
     """Check if the bytestring could be GZip and eventually decompress it,
        guess bytestring encoding and try to decode to Unicode string.
        Resort to destructive conversion otherwise."""
-    # init
     if isinstance(filecontent, str):
         return filecontent
+
     htmltext = None
+
     # GZip and Brotli test
     filecontent = handle_compressed_file(filecontent)
     # encoding
@@ -176,6 +182,7 @@ def decode_file(filecontent) -> str:
             htmltext = None
         else:
             break
+
     # return original content if nothing else succeeded
     return htmltext or str(filecontent, encoding='utf-8', errors='replace')
 
@@ -201,7 +208,7 @@ def repair_faulty_html(htmlstring: str, beginning: str) -> str:
     return htmlstring
 
 
-def fromstring_bytes(htmlobject):
+def fromstring_bytes(htmlobject: str) -> Optional[HtmlElement]:
     "Try to pass bytes to LXML parser."
     tree = None
     try:
@@ -257,23 +264,23 @@ def load_html(htmlobject: Any) -> Optional[HtmlElement]:
 
 
 @lru_cache(maxsize=2**14)  # sys.maxunicode = 1114111
-def return_printables_and_spaces(char):
+def return_printables_and_spaces(char: str) -> str:
     'Return a character if it belongs to certain classes'
     return char if char.isprintable() or char.isspace() else ''
 
 
-def remove_control_characters(string):
+def remove_control_characters(string: str) -> str:
     '''Prevent non-printable and XML invalid character errors'''
     return ''.join(map(return_printables_and_spaces, string))
 
 
-def normalize_unicode(string, unicodeform='NFC'):
+def normalize_unicode(string: str, unicodeform: Literal['NFC', 'NFD', 'NFKC', 'NFKD'] = 'NFC') -> str:
     'Normalize the given string to the specified unicode format.'
     return normalize(unicodeform, string)
 
 
 @lru_cache(maxsize=1024)
-def line_processing(line, preserve_space=False, trailing_space=False):
+def line_processing(line: str, preserve_space: bool = False, trailing_space: bool = False) -> Optional[str]:
     '''Remove HTML space entities, then discard incompatible unicode
        and invalid XML characters on line level'''
     # spacing HTML entities: https://www.w3.org/MarkUp/html-spec/html-spec_13.html
@@ -285,7 +292,7 @@ def line_processing(line, preserve_space=False, trailing_space=False):
         new_line = trim(LINES_TRIMMING.sub(r" ", new_line))
         # prune empty lines
         if all(map(str.isspace, new_line)):
-            new_line = None
+            new_line = None  # type: ignore[assignment]
         elif trailing_space:
             space_before = " " if line[0].isspace() else ""
             space_after = " " if line[-1].isspace() else ""
@@ -330,18 +337,30 @@ def sanitize_tree(tree: _Element) -> _Element:
 
 
 @lru_cache(maxsize=1024)
-def trim(string: str) -> Optional[str]:
-    '''Remove unnecessary spaces within a text string'''
+def trim(string: str) -> str:
+    "Remove unnecessary spaces within a text string."
     try:
         # remove newlines that are not related to punctuation or markup + proper trimming
-        # return LINES_TRIMMING.sub(r' ', string).strip(' \t\n\r\v')
-        # faster:
-        return ' '.join(string.split()).strip()
+        return " ".join(string.split()).strip()
     except (AttributeError, TypeError):
-        return None
+        return ""
 
 
-def is_image_file(imagesrc):
+def is_image_element(element: _Element) -> bool:
+    '''Check if an element is a valid img element'''
+    for attr in ("data-src", "src"):
+        src = element.get(attr, "")
+        if is_image_file(src):
+            return True
+    else:
+        # take the first corresponding attribute
+        for attr, value in element.attrib.items():
+            if attr.startswith("data-src") and is_image_file(value):
+                return True
+    return False
+
+
+def is_image_file(imagesrc: Optional[str]) -> bool:
     '''Check if the observed string corresponds to a valid image extension.
        Use a length threshold and apply a regex on the content.'''
     if imagesrc is None or len(imagesrc) > 8192:
@@ -349,23 +368,15 @@ def is_image_file(imagesrc):
     return bool(IMAGE_EXTENSION.search(imagesrc))
 
 
-def make_chunks(iterable, n):
-    """
-    Chunk data into smaller pieces.
-    https://docs.python.org/3/library/itertools.html
-    """
-    it = iter(iterable)
-    while True:
-        chunk = tuple(islice(it, n))
-        if not chunk:
-            return
-        yield chunk
-    # Python 3.8+ with walrus operator
-    # while batch := tuple(islice(it, n)):
-    #    yield batch
+def make_chunks(iterable: Any, n: int) -> Any:
+    "Chunk data into smaller pieces."
+    # 3.12+: https://docs.python.org/3/library/itertools.html#itertools.batched
+    iterator = iter(iterable)
+    while batch := tuple(islice(iterator, n)):
+        yield batch
 
 
-def is_acceptable_length(my_len, options) -> bool:
+def is_acceptable_length(my_len: int, options: Any) -> bool:
     "Check if the document length is within acceptable boundaries."
     if my_len < options.min_file_size:
         LOGGER.error("too small/incorrect for URL %s", options.url)
@@ -376,7 +387,7 @@ def is_acceptable_length(my_len, options) -> bool:
     return True
 
 
-def check_html_lang(tree, target_language, strict=False):
+def check_html_lang(tree: HtmlElement, target_language: str, strict: bool = False) -> bool:
     """Check HTML meta-elements for language information and split
        the result in case there are several languages."""
     for attr in TARGET_LANG_ATTRS:
@@ -400,7 +411,7 @@ def check_html_lang(tree, target_language, strict=False):
     return True
 
 
-def language_classifier(temp_text, temp_comments):
+def language_classifier(temp_text: str, temp_comments: str) -> Optional[str]:
     '''Run external component (if installed) for language identification'''
     if LANGID_FLAG is True:
         result, _ = (
@@ -408,13 +419,13 @@ def language_classifier(temp_text, temp_comments):
             if len(temp_text) > len(temp_comments)
             else py3langid.classify(temp_comments)
         )
-    else:
+    else:  # pragma: no cover
         LOGGER.warning('Language detector not installed, skipping detection')
         result = None
-    return result
+    return result  # type: ignore[no-any-return]
 
 
-def language_filter(temp_text, temp_comments, target_language, docmeta):
+def language_filter(temp_text: str, temp_comments: str, target_language: str, docmeta: Any) -> Tuple[bool, Any]:
     '''Filter text based on language detection and store relevant information'''
     # todo: run and pass info along anyway?
     if target_language is not None:
@@ -435,11 +446,90 @@ def textfilter(element: _Element) -> bool:
     '''Filter out unwanted text'''
     testtext = element.tail if element.text is None else element.text
     # to check: line len → continue if len(line) <= 5
-    return not text_chars_test(testtext) or any(map(RE_FILTER.match, testtext.splitlines()))
+    return not testtext or testtext.isspace() or any(map(RE_FILTER.match, testtext.splitlines()))
 
 
 def text_chars_test(string: Optional[str]) -> bool:
     '''Determine if a string is only composed of spaces and/or control characters'''
     # or not re.search(r'\w', string)
     # return string is not None and len(string) != 0 and not string.isspace()
-    return bool(string) and not string.isspace()
+    return bool(string) and not string.isspace()  # type: ignore[union-attr]
+
+
+def copy_attributes(dest_elem: _Element, src_elem: _Element) -> None:
+    '''Copy attributes from src element to dest element'''
+    for key in src_elem.keys():
+        dest_elem.set(key, src_elem.attrib[key])
+
+
+def is_in_table_cell(elem: _Element) -> bool:
+    '''Check whether an element is in a table cell'''
+    # return elem.getparent() is not None and bool(elem.xpath('//ancestor::cell'))
+    if elem.getparent() is None:
+        return False
+    current: Optional[_Element] = elem
+    while current is not None:
+        if current.tag == 'cell':
+            return True
+        current = current.getparent()
+    return False
+
+
+def is_last_element_in_cell(elem: _Element) -> bool:
+    '''Check whether an element is the last element in table cell'''
+    if not is_in_table_cell(elem): # shortcut
+        return False
+
+    if elem.tag == "cell":
+        children = elem.getchildren()
+        return not children or children[-1] == elem
+    else:
+        parent = cast(_Element, elem.getparent())
+        children = parent.getchildren()
+        return not children or children[-1] == elem
+
+
+def is_element_in_item(element: _Element) -> bool:
+    """Check whether an element is a list item or within a list item"""
+    current: Optional[_Element] = element
+    while current is not None:
+        if current.tag == 'item':
+            return True
+        current = current.getparent()
+    return False
+
+
+def is_first_element_in_item(element: _Element) -> bool:
+    """Check whether an element is the first element in list item"""
+    if element.tag == 'item' and element.text:
+        return True
+
+    current: Optional[_Element] = element
+    item_ancestor = None
+    while current is not None:
+        if current.tag == 'item':
+            item_ancestor = current
+            break
+        current = current.getparent()
+
+    if item_ancestor is None:
+        return False
+    elif not item_ancestor.text:
+        return True
+    return False
+
+
+def is_last_element_in_item(element: _Element) -> bool:
+    """Check whether an element is the last element in list item"""
+    if not is_element_in_item(element):
+        return False
+
+    # pure text only in list item
+    if element.tag == 'item':
+        return len(element.getchildren()) == 0
+    # element within list item
+    next_element = element.getnext()
+    if next_element is None:
+        return True
+    else:
+        return next_element.tag == 'item'

@@ -12,19 +12,21 @@ import sys
 from contextlib import redirect_stdout
 from datetime import datetime
 from os import path
+from tempfile import gettempdir
 from unittest.mock import patch
 
 import pytest
 
 from courlan import UrlStore
 
-from trafilatura import cli, cli_utils, spider  # settings
+from trafilatura import cli, cli_utils, spider, settings
 from trafilatura.downloads import add_to_compressed_dict, fetch_url
-from trafilatura.settings import args_to_extractor
 from trafilatura.utils import LANGID_FLAG
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 RESOURCES_DIR = path.join(path.abspath(path.dirname(__file__)), "resources")
+
+settings.MAX_FILES_PER_DIRECTORY = 1
 
 
 def test_parser():
@@ -84,6 +86,7 @@ def test_parser():
         "--url-filter",
         "test1",
         "test2",
+        "-vvv",
     ]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
@@ -114,27 +117,6 @@ def test_parser():
         r"Trafilatura [0-9]\.[0-9]+\.[0-9] - Python [0-9]\.[0-9]+\.[0-9]", f.getvalue()
     )
 
-    # test deprecations
-    with patch.object(sys, "argv", ["", "--inputfile", "test.txt"]), pytest.raises(
-        ValueError
-    ):
-        cli.map_args(cli.parse_args(testargs))
-
-    for arg in ("--nocomments", "--notables", "--hash-as-name"):
-        testargs = ["", arg]
-        with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
-            cli.map_args(cli.parse_args(testargs))
-
-    testargs = ["", "--inputdir", "test1"]
-    with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
-        cli.map_args(cli.parse_args(testargs))
-    testargs = ["", "--outputdir", "test2"]
-    with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
-        cli.map_args(cli.parse_args(testargs))
-    testargs = ["", "-out", "xml"]
-    with patch.object(sys, "argv", testargs), pytest.raises(ValueError):
-        cli.map_args(cli.parse_args(testargs))
-
 
 def test_climain(capfd):
     """test arguments and main CLI entrypoint"""
@@ -148,8 +130,11 @@ def test_climain(capfd):
     # help display
     assert subprocess.run([trafilatura_bin, "--help"], check=True).returncode == 0
     # piped input
-    empty_input = b"<html><body></body></html>"
-    assert subprocess.run([trafilatura_bin], input=empty_input, check=True).returncode == 0
+    empty_input = b"<html><body><article>" + b"<p>ABC</p>"*100 + b"</article></body></html>"
+    result = subprocess.run([trafilatura_bin], input=empty_input, check=True)
+    assert result.returncode == 0
+    captured = capfd.readouterr()
+    assert captured.out.strip().endswith("ABC")
     # input directory walking and processing
     env = os.environ.copy()
     if os.name == "nt":
@@ -181,6 +166,7 @@ def test_input_type():
     with open(testfile, "rb") as f:
         teststring = f.read(1024)
     assert cli.examine(teststring, args) is None
+    assert cli.examine([1, 2, 3], args) is None
     testfile = "docs/usage.rst"
     with open(testfile, "r", encoding="utf-8") as f:
         teststring = f.read()
@@ -232,10 +218,21 @@ def test_sysoutput():
         args = cli.parse_args(testargs)
     result = "DADIDA"
     cli_utils.write_result(result, args)
+    args.output_dir = gettempdir()
+    args.backup_dir = None
+    cli_utils.write_result(result, args)
     # process with backup directory and no counter
-    options = args_to_extractor(args)
+    options = settings.args_to_extractor(args)
     assert options.format == "markdown" and options.formatting is True
-    assert cli_utils.process_result("DADIDA", args, None, options) is None
+    assert cli_utils.process_result("DADIDA", args, -1, options) == -1
+
+    # with counter
+    with open(
+        path.join(RESOURCES_DIR, "httpbin_sample.html"), "r", encoding="utf-8"
+    ) as f:
+        teststring = f.read()
+    assert cli_utils.process_result(teststring, args, 1, options) == 2
+
     # test keeping dir structure
     testargs = ["", "-i", "myinputdir/", "-o", "test/", "--keep-dirs"]
     with patch.object(sys, "argv", testargs):
@@ -251,6 +248,10 @@ def test_sysoutput():
 
 def test_download():
     """test page download and command-line interface"""
+    assert cli_utils._define_exit_code([], 0) == 0
+    assert cli_utils._define_exit_code(["a"], 1) == 126
+    assert cli_utils._define_exit_code(["a"], 2) == 1
+
     testargs = ["", "-v"]
     with patch.object(sys, "argv", testargs):
         args = cli.parse_args(testargs)
@@ -275,21 +276,12 @@ def test_download():
         args = cli.parse_args(testargs)
     with pytest.raises(SystemExit) as e:
         cli.process_args(args)
-    assert e.type == SystemExit and e.value.code == 1
+    assert e.type == SystemExit and e.value.code == 126
 
 
 # @patch('trafilatura.settings.MAX_FILES_PER_DIRECTORY', 1)
 def test_cli_pipeline():
     """test command-line processing pipeline"""
-    # straight command-line input
-    # testargs = ['', '<html><body>Text</body></html>']
-    # with patch.object(sys, 'argv', testargs):
-    #    args = cli.parse_args(testargs)
-    # f = io.StringIO()
-    # with redirect_stdout(f):
-    #    cli.process_args(args)
-    # assert len(f.getvalue()) == 0
-
     # Force encoding to utf-8 for Windows in future processes spawned by multiprocessing.Pool
     os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -393,6 +385,9 @@ def test_cli_pipeline():
 
 def test_file_processing():
     "Test file processing pipeline on actual directories."
+    backup = settings.MAX_FILES_PER_DIRECTORY
+    settings.MAX_FILES_PER_DIRECTORY = 0
+
     # dry-run file processing pipeline
     testargs = ["", "--parallel", "1", "--input-dir", "/dev/null"]
     with patch.object(sys, "argv", testargs):
@@ -404,10 +399,12 @@ def test_file_processing():
     # test manually
     for f in cli_utils.generate_filelist(args.input_dir):
         cli_utils.file_processing(f, args)
-    options = args_to_extractor(args)
+    options = settings.args_to_extractor(args)
     args.output_dir = "/dev/null"
     for f in cli_utils.generate_filelist(args.input_dir):
         cli_utils.file_processing(f, args, options=options)
+
+    settings.MAX_FILES_PER_DIRECTORY = backup
 
 
 def test_cli_config_file():
@@ -420,7 +417,7 @@ def test_cli_config_file():
     ) as f:
         teststring = f.read()
     args.config_file = path.join(RESOURCES_DIR, args.config_file)
-    options = args_to_extractor(args)
+    options = settings.args_to_extractor(args)
     assert cli.examine(teststring, args, options=options) is None
 
 
@@ -525,7 +522,7 @@ def test_crawling():
         args = cli.parse_args(testargs)
     f = io.StringIO()
     with redirect_stdout(f):
-        cli_utils.cli_crawler(args)
+        cli.process_args(args)
     assert f.getvalue() == "https://httpbun.com/html\n"
 
     spider.URL_STORE = UrlStore(compressed=False, strict=False)

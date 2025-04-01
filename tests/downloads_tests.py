@@ -41,7 +41,8 @@ from trafilatura.downloads import (DEFAULT_HEADERS, HAS_PYCURL, USER_AGENT, Resp
                                    add_to_compressed_dict, fetch_url,
                                    is_live_page, load_download_buffer)
 from trafilatura.settings import DEFAULT_CONFIG, args_to_extractor, use_config
-from trafilatura.utils import decode_file, decode_response, handle_compressed_file, load_html
+from trafilatura.utils import decode_file, handle_compressed_file, load_html
+
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
@@ -59,6 +60,7 @@ def _reset_downloads_global_objects():
     """
     Force global objects to be re-created
     """
+    trafilatura.downloads.PROXY_URL = None
     trafilatura.downloads.HTTP_POOL = None
     trafilatura.downloads.NO_CERT_POOL = None
     trafilatura.downloads.RETRY_STRATEGY = None
@@ -105,8 +107,6 @@ def test_fetch():
     '''Test URL fetching.'''
     # sanity check
     assert _send_urllib_request('', True, False, DEFAULT_CONFIG) is None
-    with pytest.raises(ValueError):
-        fetch_url("https://example.org", decode=False)
 
     # fetch_url
     assert fetch_url('#@1234') is None
@@ -150,8 +150,50 @@ def test_fetch():
     if HAS_PYCURL:
         assert _send_pycurl_request(*args) is None
 
+    # test MAX_FILE_SIZE
+    backup = ZERO_CONFIG.getint('DEFAULT', 'MAX_FILE_SIZE')
+    ZERO_CONFIG.set('DEFAULT', 'MAX_FILE_SIZE', '1')
+    args = ('https://httpbun.com/html', True, False, ZERO_CONFIG)
+    assert _send_urllib_request(*args) is None
+    if HAS_PYCURL:
+        assert _send_pycurl_request(*args) is None
+    ZERO_CONFIG.set('DEFAULT', 'MAX_FILE_SIZE', str(backup))
+
     # reset global objects again to avoid affecting other tests
     _reset_downloads_global_objects()
+
+
+IS_PROXY_TEST = os.environ.get("PROXY_TEST", "false") == "true"
+
+PROXY_URLS = (
+    ("socks5://localhost:1080", True),
+    ("socks5://user:pass@localhost:1081", True),
+    ("socks5://localhost:10/", False),
+    ("bogus://localhost:1080", False),
+)
+
+
+def proxied(f):
+    "Run the download using a potentially malformed proxy address."
+    for proxy_url, is_working in PROXY_URLS:
+        _reset_downloads_global_objects()
+        trafilatura.downloads.PROXY_URL = proxy_url
+        if is_working:
+            f()
+        else:
+            with pytest.raises(AssertionError):
+                f()
+    _reset_downloads_global_objects()
+
+
+@pytest.mark.skipif(not IS_PROXY_TEST, reason="proxy tests disabled")
+def test_proxied_is_live_page():
+    proxied(test_is_live_page)
+
+
+@pytest.mark.skipif(not IS_PROXY_TEST, reason="proxy tests disabled")
+def test_proxied_fetch():
+    proxied(test_fetch)
 
 
 def test_config():
@@ -193,8 +235,6 @@ def test_decode():
     for compressed_string in compressed_strings:
         assert handle_compressed_file(compressed_string) == html_string.encode("utf-8")
         assert decode_file(compressed_string) == html_string
-        with pytest.raises(ValueError):
-            decode_response(compressed_string)
 
     # errors
     for bad_file in ("äöüß", b"\x1f\x8b\x08abc", b"\x28\xb5\x2f\xfdabc"):
@@ -233,14 +273,16 @@ def test_queue():
     args.config_file = os.path.join(RESOURCES_DIR, 'newsettings.cfg')
     options = args_to_extractor(args)
     options.config['DEFAULT']['SLEEP_TIME'] = '0.2'
-    results = download_queue_processing(url_store, args, None, options)
-    assert len(results[0]) == 5 and results[1] is None
+    results = download_queue_processing(url_store, args, -1, options)
+    assert len(results[0]) == 5 and results[1] is -1
 
 
 if __name__ == '__main__':
     test_response_object()
     test_is_live_page()
     test_fetch()
+    test_proxied_is_live_page()
+    test_proxied_fetch()
     test_config()
     test_decode()
     test_queue()

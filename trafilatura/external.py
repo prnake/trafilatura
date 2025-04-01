@@ -5,11 +5,13 @@ Functions grounding on third-party software.
 
 import logging
 
+from typing import Any, Tuple
+
 # third-party
-from justext.core import (ParagraphMaker, classify_paragraphs,
-                          revise_paragraph_classification)
-from justext.utils import get_stoplist, get_stoplists
-from lxml.etree import Element, strip_tags, tostring
+from justext.core import ParagraphMaker, classify_paragraphs, revise_paragraph_classification  # type: ignore
+from justext.utils import get_stoplist, get_stoplists  # type: ignore
+from lxml.etree import _Element, Element, strip_tags, tostring
+from lxml.html import HtmlElement
 
 # own
 from .baseline import basic_cleaning
@@ -27,19 +29,20 @@ JT_STOPLIST = None
 SANITIZED_XPATH = './/aside|.//audio|.//button|.//fieldset|.//figure|.//footer|.//iframe|.//input|.//label|.//link|.//nav|.//noindex|.//noscript|.//object|.//option|.//select|.//source|.//svg|.//time'
 
 
-def try_readability(htmlinput):
+def try_readability(htmlinput: HtmlElement) -> HtmlElement:
     '''Safety net: try with the generic algorithm readability'''
     # defaults: min_text_length=25, retry_length=250
     try:
         doc = ReadabilityDocument(htmlinput, min_text_length=25, retry_length=250)
         # force conversion to utf-8 (see #319)
-        return fromstring_bytes(doc.summary())
+        summary = fromstring_bytes(doc.summary())
+        return summary if summary is not None else HtmlElement()
     except Exception as err:
         LOGGER.warning('readability_lxml failed: %s', err)
-        return Element('div')
+        return HtmlElement()
 
 
-def compare_extraction(tree, backup_tree, body, text, len_text, options):
+def compare_extraction(tree: HtmlElement, backup_tree: HtmlElement, body: _Element, text: str, len_text: int, options: Any) -> Tuple[_Element, str, int]:
     '''Decide whether to choose own or external extraction
        based on a series of heuristics'''
     # bypass for recall
@@ -100,12 +103,12 @@ def compare_extraction(tree, backup_tree, body, text, len_text, options):
 
     # post-processing: remove unwanted sections
     if use_readability and not jt_result:
-        body, text, len_text = sanitize_tree(body, options)
+        body, text, len_text = sanitize_tree(body, options)  # type: ignore[arg-type]
 
     return body, text, len_text
 
 
-def jt_stoplist_init():
+def jt_stoplist_init() -> Tuple[str]:
     'Retrieve and return the content of all JusText stoplists'
     global JT_STOPLIST
     stoplist = set()
@@ -115,7 +118,7 @@ def jt_stoplist_init():
     return JT_STOPLIST
 
 
-def custom_justext(tree, stoplist):
+def custom_justext(tree: HtmlElement, stoplist: Tuple[str]) -> Any:
     'Customized version of JusText processing'
     paragraphs = ParagraphMaker.make_paragraphs(tree)
     classify_paragraphs(paragraphs, stoplist, 50, 150, 0.1, 0.2, 0.25, True)
@@ -123,7 +126,7 @@ def custom_justext(tree, stoplist):
     return paragraphs
 
 
-def try_justext(tree, url, target_language):
+def try_justext(tree: HtmlElement, url: str, target_language: str) -> _Element:
     '''Second safety net: try with the generic algorithm justext'''
     # init
     result_body = Element('body')
@@ -135,7 +138,7 @@ def try_justext(tree, url, target_language):
     # extract
     try:
         paragraphs = custom_justext(tree, justext_stoplist)
-    except ValueError as err:  # not an XML element: HtmlComment
+    except Exception as err:
         LOGGER.error('justext %s %s', err, url)
     else:
         for paragraph in paragraphs:
@@ -147,7 +150,7 @@ def try_justext(tree, url, target_language):
     return result_body
 
 
-def justext_rescue(tree, options):
+def justext_rescue(tree: HtmlElement, options: Any) -> Tuple[_Element, str, int]:
     '''Try to use justext algorithm as a second fallback'''
     # additional cleaning
     tree = basic_cleaning(tree)
@@ -157,12 +160,10 @@ def justext_rescue(tree, options):
     return temppost_algo, temp_text, len(temp_text)
 
 
-def sanitize_tree(tree, options):
+def sanitize_tree(tree: HtmlElement, options: Any) -> Tuple[HtmlElement, str, int]:
     '''Convert and sanitize the output from the generic algorithm (post-processing)'''
     # 1. clean
     cleaned_tree = tree_cleaning(tree, options)
-    for elem in tree.findall(SANITIZED_XPATH):
-        elem.getparent().remove(elem)
     if options.links is False:
         strip_tags(cleaned_tree, 'a')
     strip_tags(cleaned_tree, 'span')

@@ -8,13 +8,14 @@ import json
 from typing import Any, Tuple
 
 from lxml.etree import _Element, Element, SubElement
+from lxml.html import HtmlElement
 
 from .settings import BASIC_CLEAN_XPATH
 from .utils import load_html, trim
 from .xml import delete_element
 
 
-def basic_cleaning(tree: _Element) -> _Element:
+def basic_cleaning(tree: HtmlElement) -> HtmlElement:
     "Remove a few section types from the document."
     for elem in BASIC_CLEAN_XPATH(tree):
         delete_element(elem)
@@ -42,16 +43,16 @@ def baseline(filecontent: Any) -> Tuple[_Element, str, int]:
     for elem in tree.iterfind('.//script[@type="application/ld+json"]'):
         if elem.text and 'articleBody' in elem.text:
             try:
-                json_body = json.loads(elem.text).get("articleBody")
+                json_body = json.loads(elem.text).get("articleBody", "")
             except Exception:  # JSONDecodeError or 'list' object has no attribute 'get'
                 json_body = ""
             if json_body:
                 if "<p>" in json_body:
                     parsed = load_html(json_body)
-                    text = parsed.text_content() if parsed is not None else ""
+                    text = trim(parsed.text_content()) if parsed is not None else ""
                 else:
-                    text = json_body
-                SubElement(postbody, 'p').text = trim(text)
+                    text = trim(json_body)
+                SubElement(postbody, 'p').text = text
                 temp_text += " " + text if temp_text else text
                 # return postbody, elem.text, len(elem.text)
     if len(temp_text) > 100:
@@ -88,10 +89,11 @@ def baseline(filecontent: Any) -> Tuple[_Element, str, int]:
     postbody = Element('body')
     body_elem = tree.find('.//body')
     if body_elem is not None:
-        elem = SubElement(postbody, 'p')
+        p_elem = SubElement(postbody, 'p')
         # todo: sanitize?
-        elem.text = '\n'.join([trim(e) for e in body_elem.itertext()])
-        return postbody, elem.text, len(elem.text)
+        text_elems = [trim(e) for e in body_elem.itertext()]
+        p_elem.text = '\n'.join([e for e in text_elems if e])
+        return postbody, p_elem.text, len(p_elem.text)
 
     # new fallback
     text = html2txt(tree, clean=False)

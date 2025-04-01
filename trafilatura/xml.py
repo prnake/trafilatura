@@ -7,21 +7,18 @@ import csv
 import logging
 
 from html import unescape
+from importlib.metadata import version
 from io import StringIO
 from json import dumps as json_dumps
 from pathlib import Path
 from typing import List, Optional
 
-try:  # Python 3.8+
-    from importlib.metadata import version
-except ImportError:
-    from importlib_metadata import version
-
 from lxml.etree import (_Element, Element, SubElement, XMLParser,
                         fromstring, tostring, DTD)
 
 from .settings import Document, Extractor
-from .utils import sanitize, sanitize_tree, text_chars_test
+from .utils import is_element_in_item, is_first_element_in_item, is_in_table_cell, is_last_element_in_cell, \
+    is_last_element_in_item, sanitize, sanitize_tree, text_chars_test
 
 
 LOGGER = logging.getLogger(__name__)
@@ -38,8 +35,8 @@ TEI_DIV_SIBLINGS = {"p", "list", "table", "quote", "ab"}
 
 CONTROL_PARSER = XMLParser(remove_blank_text=True)
 
-NEWLINE_ELEMS = {'code', 'graphic', 'head', 'lb', 'list', 'p', 'quote', 'row', 'table'}
-SPECIAL_FORMATTING = {'del', 'head', 'hi', 'ref'}
+NEWLINE_ELEMS = {'graphic', 'head', 'lb', 'list', 'p', 'quote', 'row', 'table'}
+SPECIAL_FORMATTING = {'code', 'del', 'head', 'hi', 'ref', 'item', 'cell'}
 WITH_ATTRIBUTES = {'cell', 'row', 'del', 'graphic', 'head', 'hi', 'item', 'list', 'ref'}
 NESTING_WHITELIST = {"cell", "figure", "item", "note", "quote"}
 
@@ -50,6 +47,8 @@ META_ATTRIBUTES = [
 ]
 
 HI_FORMATTING = {'#b': '**', '#i': '*', '#u': '__', '#t': '`'}
+
+MAX_TABLE_WIDTH = 1000
 
 
 # https://github.com/lxml/lxml/blob/master/src/lxml/html/__init__.py
@@ -122,8 +121,8 @@ def build_json_output(docmeta: Document, with_metadata: bool = True) -> str:
             'source': outputdict.pop('url'),
             'source-hostname': outputdict.pop('sitename'),
             'excerpt': outputdict.pop('description'),
-            'categories': ';'.join(outputdict.pop('categories')),
-            'tags': ';'.join(outputdict.pop('tags')),
+            'categories': ';'.join(outputdict.pop('categories') or []),
+            'tags': ';'.join(outputdict.pop('tags') or []),
             'text': xmltotxt(outputdict.pop('body'), include_formatting=False),
         })
         commentsbody = outputdict.pop('commentsbody')
@@ -131,8 +130,7 @@ def build_json_output(docmeta: Document, with_metadata: bool = True) -> str:
         outputdict = {'text': xmltotxt(docmeta.body, include_formatting=False)}
         commentsbody = docmeta.commentsbody
 
-    if commentsbody is not None:
-        outputdict['comments'] = xmltotxt(commentsbody, include_formatting=False)
+    outputdict['comments'] = xmltotxt(commentsbody, include_formatting=False)
 
     return json_dumps(outputdict, ensure_ascii=False)
 
@@ -149,14 +147,13 @@ def build_xml_output(docmeta: Document) -> _Element:
     '''Build XML output tree based on extracted information'''
     output = Element('doc')
     add_xml_meta(output, docmeta)
-    docmeta.body.tag = 'main'  # type: ignore[attr-defined]
+    docmeta.body.tag = 'main'
+
     # clean XML tree
     output.append(clean_attributes(docmeta.body))
-    if docmeta.commentsbody is not None:
-        docmeta.commentsbody.tag = 'comments'
-        output.append(clean_attributes(docmeta.commentsbody))
-# XML invalid characters
-# https://chase-seibert.github.io/blog/2011/05/20/stripping-control-characters-in-python.html
+    docmeta.commentsbody.tag = 'comments'
+    output.append(clean_attributes(docmeta.commentsbody))
+
     return output
 
 
@@ -255,11 +252,13 @@ def validate_tei(xmldoc: _Element) -> bool:
 
 
 def replace_element_text(element: _Element, include_formatting: bool) -> str:
-    "Determine element text based on just the text of the element. One must deal with the tail separately."
+    """Determine element text based on just the text of the element. One must deal with the tail separately."""
     elem_text = element.text or ""
     # handle formatting: convert to markdown
     if include_formatting and element.text:
-        if element.tag == "head":
+        if element.tag in ('article', 'list', 'table'):
+            elem_text = elem_text.strip()
+        elif element.tag == "head":
             try:
                 number = int(element.get("rend")[1])  # type: ignore[index]
             except (TypeError, ValueError):
@@ -272,8 +271,12 @@ def replace_element_text(element: _Element, include_formatting: bool) -> str:
             if rend in HI_FORMATTING:
                 elem_text = f"{HI_FORMATTING[rend]}{elem_text}{HI_FORMATTING[rend]}"
         elif element.tag == "code":
-            if "\n" in element.text:
-                elem_text = f"```\n{elem_text}\n```"
+            if "\n" in elem_text or element.xpath(".//lb"):  # Handle <br> inside <code>
+                # Convert <br> to \n within code blocks
+                for lb in element.xpath(".//lb"):
+                    elem_text = f"{elem_text}\n{lb.tail}"
+                    lb.getparent().remove(lb)
+                elem_text = f"```\n{elem_text}\n```\n"
             else:
                 elem_text = f"`{elem_text}`"
     # handle links
@@ -289,45 +292,64 @@ def replace_element_text(element: _Element, include_formatting: bool) -> str:
         else:
             LOGGER.warning("empty link: %s %s", elem_text, element.attrib)
     # cells
-    if element.tag == "cell" and elem_text and len(element) > 0:
-        if element[0].tag == 'p':
+    if element.tag == 'cell':
+        elem_text = elem_text.strip()
+
+        if elem_text and not is_last_element_in_cell(element):
             elem_text = f"{elem_text} "
-    # lists
-    elif element.tag == "item" and elem_text:
-        elem_text = f"- {elem_text}\n"
+
+    # within lists
+    if is_first_element_in_item(element) and not is_in_table_cell(element):
+        elem_text = f"- {elem_text}"
+
     return elem_text
 
 
 def process_element(element: _Element, returnlist: List[str], include_formatting: bool) -> None:
     "Recursively convert a LXML element and its children to a flattened string representation."
+    if element.tag == 'cell' and element.getprevious() is None:
+        returnlist.append('| ')
+
     if element.text:
         # this is the text that comes before the first child
         returnlist.append(replace_element_text(element, include_formatting))
 
+    if element.tail and element.tag != 'graphic' and is_in_table_cell(element):
+        # if element is in table cell, append tail after element text when element is not graphic since we deal with
+        # graphic tail alone, textless elements like lb should be processed here too, otherwise process tail at the end
+        returnlist.append(element.tail.strip())
+
     for child in element:
         process_element(child, returnlist, include_formatting)
 
-    if not element.text and not element.tail:
+    if not element.text:
         if element.tag == "graphic":
             # add source, default to ''
             text = f'{element.get("title", "")} {element.get("alt", "")}'
             returnlist.append(f'![{text.strip()}]({element.get("src", "")})')
+
+            if element.tail:
+                returnlist.append(f' {element.tail.strip()}')
         # newlines for textless elements
         elif element.tag in NEWLINE_ELEMS:
             # add line after table head
             if element.tag == "row":
                 cell_count = len(element.xpath(".//cell"))
                 # restrict columns to a maximum of 1000
-                max_span = min(int(element.get("colspan") or element.get("span", 1)), 1000)
+                span_info = element.get("colspan") or element.get("span")
+                if not span_info or not span_info.isdigit():
+                    max_span = 1
+                else:
+                    max_span = min(int(span_info), MAX_TABLE_WIDTH)
                 # row ended so draw extra empty cells to match max_span
                 if cell_count < max_span:
                     returnlist.append(f'{"|" * (max_span - cell_count)}\n')
                 # if this is a head row, draw the separator below
                 if element.xpath("./cell[@role='head']"):
-                    returnlist.append(f'\n{"---|" * max_span}\n')
+                    returnlist.append(f'\n|{"---|" * max_span}\n')
             else:
                 returnlist.append("\n")
-        elif element.tag != "cell":
+        elif element.tag != "cell" and element.tag != 'item':
             # cells still need to append vertical bars
             # but nothing more to do with other textless elements
             return
@@ -335,36 +357,42 @@ def process_element(element: _Element, returnlist: List[str], include_formatting
     # Process text
 
     # Common elements (Now processes end-tag logic correctly)
-    if element.tag in NEWLINE_ELEMS and not element.xpath("ancestor::cell"):
+    if element.tag in NEWLINE_ELEMS and not element.xpath("ancestor::cell") and not is_element_in_item(element):
         # spacing hack
-        returnlist.append("\n\u2424\n" if include_formatting else "\n")
+        returnlist.append("\n\u2424\n" if include_formatting and element.tag != 'row' else "\n")
     elif element.tag == "cell":
         returnlist.append(" | ")
-    elif element.tag not in SPECIAL_FORMATTING:
+    elif element.tag not in SPECIAL_FORMATTING and not is_last_element_in_cell(element): #  and not is_in_table_cell(element)
         returnlist.append(" ")
 
     # this is text that comes after the closing tag, so it should be after any NEWLINE_ELEMS
-    if element.tail:
-        returnlist.append(element.tail)
+    # unless it's within a list item or a table
+    is_in_cell = is_in_table_cell(element)
+    if element.tail and not is_in_cell:
+        returnlist.append(element.tail.strip() if is_element_in_item(element) or element.tag=='list' else element.tail)
+
+    # deal with list items alone
+    if is_last_element_in_item(element) and not is_in_cell:
+        returnlist.append('\n')
 
 
-def xmltotxt(xmloutput: _Element, include_formatting: bool) -> str:
+def xmltotxt(xmloutput: Optional[_Element], include_formatting: bool) -> str:
     "Convert to plain text format and optionally preserve formatting as markdown."
+    if xmloutput is None:
+        return ""
+
     returnlist: List[str] = []
 
     process_element(xmloutput, returnlist, include_formatting)
 
-    return unescape(sanitize("".join(returnlist)) or "")
+    return unescape(sanitize("".join(returnlist), True) or "")
 
 
 def xmltocsv(document: Document, include_formatting: bool, *, delim: str = "\t", null: str = "null") -> str:
     "Convert the internal XML document representation to a CSV string."
     # preprocessing
-    posttext = xmltotxt(document.body, include_formatting)
-    if document.commentsbody is not None:
-        commentstext = xmltotxt(document.commentsbody, include_formatting)
-    else:
-        commentstext = ""
+    posttext = xmltotxt(document.body, include_formatting) or null
+    commentstext = xmltotxt(document.commentsbody, include_formatting) or null
 
     # output config
     output = StringIO()
@@ -399,11 +427,10 @@ def write_teitree(docmeta: Document) -> _Element:
     postbody.set('type', 'entry')
     textbody.append(postbody)
     # comments
-    if docmeta.commentsbody is not None:
-        commentsbody = clean_attributes(docmeta.commentsbody)
-        commentsbody.tag = 'div'
-        commentsbody.set('type', 'comments')
-        textbody.append(commentsbody)
+    commentsbody = clean_attributes(docmeta.commentsbody)
+    commentsbody.tag = 'div'
+    commentsbody.set('type', 'comments')
+    textbody.append(commentsbody)
     return teidoc
 
 
@@ -584,7 +611,7 @@ def _move_element_one_level_up(element: _Element) -> None:
         return
 
     new_elem = Element("p")
-    new_elem.extend(sibling for sibling in element.itersiblings())
+    new_elem.extend(list(element.itersiblings()))
 
     grand_parent.insert(grand_parent.index(parent) + 1, element)
 

@@ -1,6 +1,79 @@
 ## History / Changelog
 
 
+## 2.0.0
+
+Breaking changes:
+- Python 3.6 and 3.7 deprecated (#709)
+- `bare_extraction()`:
+   - now returns an instance of the `Document` class by default
+   - `as_dict` deprecation warning → use `.as_dict()` method on return value (#730)
+- `bare_extraction()` and `extract()`: `no_fallback` deprecation warning → use `fast` instead (#730)
+- downloads: remove `decode` argument in `fetch_url()` → use `fetch_response` instead (#724)
+- deprecated graphical user interface now removed (#713)
+- extraction: move `max_tree_size` parameter to `settings.cfg` (#742)
+- use type hinting (#721, #723, #748)
+- see [Python](https://trafilatura.readthedocs.io/en/latest/usage-python.html#deprecations) and [CLI](https://trafilatura.readthedocs.io/en/latest/usage-cli.html#deprecations) deprecations in the docs
+
+Fixes:
+- set `options.source` before raising error on empty doc tree by @dmoklaf (#707)
+- robust encoding in `options.source` (#717)
+- more robust mapping for conversion to HTML (#721)
+- CLI downloads: use all information in settings file (#734)
+- downloads: cleaner urllib3 code (#736)
+- refine table markdown output by @unsleepy22 (#752)
+- extraction fix: images in text nodes by @unsleepy22 (#757)
+
+Metadata:
+- more robust URL extraction (#710)
+
+Command-line interface:
+- CLI: print URLs early for feeds and sitemaps with `--list` with @gremid (#744)
+- CLI: add 126 exit code for high error ratio (#747)
+
+Maintenance:
+- remove already deprecated functions and args (#716)
+- add type hints (#723, #728)
+- setup: use `pyproject.toml` file (#715)
+- simplify code (#708, #709, #727)
+- better debug messages in `main_extractor` (#714)
+- evaluation: review data, update packages, add magic_html (#731)
+- setup: explicit exports through `__all__` (#740)
+- tests: extend coverage (#753)
+
+Documentation:
+- fix link in `docs/index.html` by @nzw0301 (#711)
+- remove docs from published packages (#743)
+- update docs (#745)
+
+
+## 1.12.2
+
+- downloads: add support for SOCKS proxies with @gremid (#682)
+- extraction fix: ValueError in table spans (#685)
+- spider: `prune_xpath` parameter added by @felipehertzer (#684)
+- spider: relax strict parameter for link extraction (#687)
+- sitemaps: `max_sitemaps` parameter added by @felipehertzer (#690)
+- maintenance: make compression libraries optional (#691)
+- metadata: review and lint code (#694)
+
+
+### 1.12.1
+
+Navigation:
+- spider: restrict search to sections containing URL path (#673)
+- crawler: add parameter class and types, **breaking change** for undocumented functions (#675)
+- maintenance: simplify link discovery and extend tests (#674)
+- CLI: review code, add types and tests (#677)
+
+Bugfixes:
+- fix `AttributeError` in element deletion (#668)
+- fix `MemoryError` in table header columns (#665)
+
+Docs:
+- docs: fix variable name for extract_metadata in quickstart by @jpigla in #678
+
+
 ### 1.12.0
 
 Breaking change:

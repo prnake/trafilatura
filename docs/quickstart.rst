@@ -87,7 +87,7 @@ The tool can also extract specific information from a web page, such as the titl
 
     >>> from trafilatura import fetch_url, extract_metadata
     >>> downloaded = fetch_url('https://github.blog/2019-03-29-leader-spotlight-erin-spiceland/')
-    >>> extract_metadata(url)
+    >>> extract_metadata(downloaded)
 
 
 On the command-line
@@ -128,4 +128,4 @@ Further steps
 For more information please refer to `usage documentation <usage.html>`_ and `tutorials <tutorials.html>`_.
 
 .. hint::
-     Explore Trafilatura's features interactively with this Python Notebook: `Trafilatura overview <Trafilatura_Overview.ipynb>`_
+     Explore Trafilatura's features interactively with this Python Notebook: `Trafilatura overview <https://github.com/adbar/trafilatura/blob/master/docs/Trafilatura_Overview.ipynb>`_

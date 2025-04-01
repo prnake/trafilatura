@@ -260,6 +260,19 @@ Using a subpart of the site also acts like a filter, for example ``--sitemap "ht
 For more information on sitemap use and filters for lists of links see this blog post: `Using sitemaps to crawl websites <https://adrien.barbaresi.eu/blog/using-sitemaps-crawl-websites.html>`_ and this `tutorial on link filtering <tutorial0.html#link-filtering>`_.
 
 
+Deprecations
+------------
+
+The following arguments have been deprecated since inception:
+
+- ``--nocomments`` and ``--notables`` → ``--no-comments`` and ``--no-tables``
+- ``--inputfile``, ``--inputdir``, and ``--outputdir`` → ``--input-file``, ``--input-dir``, and ``--output-dir``
+- ``-out`` → ``--output-format``
+- ``--hash-as-name`` → hashes used by default
+- ``--with-metadata`` (include metadata) had once the effect of today's ``--only-with-metadata`` (only documents with necessary metadata)
+
+
+
 Further information
 -------------------
 
@@ -276,10 +289,10 @@ For all usage instructions see ``trafilatura -h``:
                    [--parallel PARALLEL] [-b BLACKLIST] [--list]
                    [-o OUTPUTDIR] [--backup-dir BACKUP_DIR] [--keep-dirs]
                    [--feed [FEED] | --sitemap [SITEMAP] | --crawl [CRAWL] |
-                   --explore [EXPLORE]] [--archived]
+                   --explore [EXPLORE] | --probe [PROBE]] [--archived]
                    [--url-filter URL_FILTER [URL_FILTER ...]] [-f]
                    [--formatting] [--links] [--images] [--no-comments]
-                   [--no-tables] [--only-with-metadata]
+                   [--no-tables] [--only-with-metadata] [--with-metadata]
                    [--target-language TARGET_LANGUAGE] [--deduplicate]
                    [--config-file CONFIG_FILE] [--precision] [--recall]
                    [--output-format {csv,json,html,markdown,txt,xml,xmltei} | 

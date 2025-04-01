@@ -7,7 +7,7 @@ from lxml import html
 
 from trafilatura import extract
 from trafilatura.metadata import Document
-from trafilatura.settings import DEFAULT_CONFIG
+from trafilatura.settings import DEFAULT_CONFIG, Extractor
 from trafilatura.utils import LANGID_FLAG, check_html_lang, language_filter
 
 
@@ -35,17 +35,22 @@ def test_filters():
         assert language_filter('Hier ist ein Text.', '', 'en', SAMPLE_META)[0] is False
     # test URL blacklist
     assert extract('<html><head><link rel="canonical" href="https://example.org"/></head><body></body></html>', output_format='xml', url_blacklist={'https://example.org'}) is None
+
     ## recursion limit
+    options = Extractor()
+    options.max_tree_size = 500
     my_p = '<p>abc</p>'
     doc = html.fromstring('<html><body>' + my_p*50 + '</body></html>')
-    assert extract(doc, max_tree_size=500) is not None
+    assert extract(doc, options=options) is not None
     doc = html.fromstring('<html><body>' + my_p*501 + '</body></html>')
-    assert extract(doc, max_tree_size=500) is None
+    assert extract(doc, options=options) is None
+
+    options.formatting = True
     my_p = '<p><hi rend="#i">abc</hi></p>'
     doc = html.fromstring('<html><body>' + my_p*501 + '</body></html>')
-    assert extract(doc, include_formatting=True, max_tree_size=500) is None
+    assert extract(doc, options=options) is None
     doc = html.fromstring('<html><body>' + my_p*499 + '</body></html>')
-    assert extract(doc, include_formatting=True, max_tree_size=500) is not None
+    assert extract(doc, options=options) is not None
 
     # HTML lang filter
     # no lang
@@ -95,15 +100,21 @@ def test_prune_xpath():
         my_h2 = '<h2>42</h2>'
         return html.fromstring('<html><body>' + my_h1 + my_h2 + my_p*50 + '</body></html>')
 
+    def doc4():
+        my_p = '<p>abc</p>'
+        return html.fromstring('<html><body>' + my_p + '</body></html><!-- comment -->')
+
     #test xpath pruning
     assert extract(doc(), prune_xpath='//p') == ''
     assert extract(doc2(), prune_xpath='//p') == 'ABC'
     assert extract(doc2(), prune_xpath=['//p', '//h1']) == ''
     assert extract(doc3(), prune_xpath=['//p', '//h1']) == '42'
+    assert extract(doc4(), prune_xpath=['//comment()']) == 'abc'
     # sanity check
     assert extract(doc()) != ''
     assert extract(doc2()) != ''
     assert extract(doc3()) != ''
+    assert extract(doc4()) != ''
 
 
 if __name__ == '__main__':

@@ -220,7 +220,7 @@ def normalize_json(string: str) -> str:
         string = JSON_UNICODE_REPLACE.sub(lambda match: chr(int(match[1], 16)), string)
         string = ''.join(c for c in string if ord(c) < 0xD800 or ord(c) > 0xDFFF)
         string = unescape(string)
-    return trim(JSON_REMOVE_HTML.sub('', string))  # type: ignore[no-any-return]
+    return trim(JSON_REMOVE_HTML.sub('', string))
 
 
 def normalize_authors(current_authors: Optional[str], author_string: str) -> Optional[str]:

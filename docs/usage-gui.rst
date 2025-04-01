@@ -8,6 +8,10 @@ Note that the GUI was a feature in Trafilatura until version 1.8.1, but it is cu
 If installation fails, usage on the command-line is recommended.
 
 
+.. hint::
+    This interface is removed until further notice starting from Trafilatura version 2, mostly due to issues with cross-platform tests and maintenance.
+
+
 Installation
 ~~~~~~~~~~~~
 
@@ -35,7 +39,7 @@ Troubleshooting
 Mac OS X:
 
 - ``This program needs access to the screen...`` This problem is related to the way you installed Python or the shell you're running:
-    1. Clone the repository and start with "python trafilatura_gui/interface.py" (`source <https://docs.python.org/3/using/mac.html#running-scripts-with-a-gui>`_)
+    1. Clone the repository and start with "python trafilatura_gui/interface.py" (`source <https://docs.python.org/3/using/mac.html>`_)
     2. `Configure your virtual environment <https://wiki.wxpython.org/wxPythonVirtualenvOnMac>`_ (Python3 and wxpython 4.1.0)
 
 
