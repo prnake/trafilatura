@@ -518,8 +518,7 @@ def handle_textelem(element: _Element, potential_tags: Set[str], options: Extrac
         new_element = handle_formatting(element, options)  # process_node(element, options)
     elif element.tag == 'table' and 'table' in potential_tags:
         new_element = handle_table(element, potential_tags, options)
-    elif element.tag == '
-    ' and 'graphic' in potential_tags:
+    elif element.tag == 'graphic' and 'graphic' in potential_tags:
         new_element = handle_image(element, options)
     else:
         # other elements (div, ??, ??)
