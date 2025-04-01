@@ -183,7 +183,9 @@ def handle_lists(element: _Element, options: Extractor) -> Optional[_Element]:
         else:
             process_nested_elements(child, new_child_elem, options)
             if child.tail is not None and child.tail.strip():
-                new_child_elem_children = [el for el in new_child_elem if el.tag != "done"]
+                new_child_elem_children = [
+                    el for el in new_child_elem if el.tag != "done"
+                ]
                 if new_child_elem_children:
                     last_subchild = new_child_elem_children[-1]
                     if last_subchild.tail is None or not last_subchild.tail.strip():
@@ -284,62 +286,61 @@ def handle_paragraphs(element: _Element, potential_tags: Set[str], options: Extr
     # children
     processed_element = Element(element.tag)
     for child in element.iter("*"):
-        if child.tag not in potential_tags and child.tag != "done":
-            _log_event("unexpected in p", child.tag, child.text)
-            continue
-        # spacing = child.tag in SPACING_PROTECTED  # todo: outputformat.startswith('xml')?
-        # todo: act on spacing here?
-        processed_child = handle_textnode(child, options, comments_fix=False, preserve_spaces=True)
-        if processed_child is not None:
-            # todo: needing attention!
-            if processed_child.tag == "p":
-                _log_event("extra in p", "p", processed_child.text)
-                if processed_element.text:
-                    processed_element.text += " " + (processed_child.text or "")
-                else:
-                    processed_element.text = processed_child.text
-                child.tag = "done"
-                continue
-            # handle formatting
-            newsub = Element(child.tag)
-            if processed_child.tag in P_FORMATTING:
-                # check depth and clean
-                if len(processed_child) > 0:
-                    for item in processed_child:  # children are lists
-                        if text_chars_test(item.text) is True:
-                            item.text = " " + item.text  # type: ignore[operator]
-                        strip_tags(processed_child, item.tag)
-                # correct attributes
-                if child.tag == "hi":
-                    newsub.set("rend", child.get("rend", ""))
-                elif child.tag == "ref":
-                    if child.get("target") is not None:
-                        newsub.set("target", child.get("target", ""))
-            # handle line breaks
-            # elif processed_child.tag == 'lb':
-            #    try:
-            #        processed_child.tail = process_node(child, options).tail
-            #    except AttributeError:  # no text
-            #        pass
-            # prepare text
-            # todo: to be moved to handle_textnode()
-            # if text_chars_test(processed_child.text) is False:
-            #    processed_child.text = ''
-            # if text_chars_test(processed_child.tail) is False:
-            #    processed_child.tail = ''
-            # if there are already children
-            # if len(processed_element) > 0:
-            #    if text_chars_test(processed_child.tail) is True:
-            #        newsub.tail = processed_child.text + processed_child.tail
-            #    else:
-            #        newsub.tail = processed_child.text
-            newsub.text, newsub.tail = processed_child.text, processed_child.tail
-
-            if processed_child.tag == 'graphic':
-                image_elem = handle_image(processed_child, options)
-                if image_elem is not None:
-                    newsub = image_elem
-            processed_element.append(newsub)
+        try:
+            if child.tag not in potential_tags and child.tag != "done":
+                LOGGER.debug("unexpected in p: %s %s %s", child.tag, child.text, child.tail)
+                # continue
+            # spacing = child.tag in SPACING_PROTECTED  # todo: outputformat.startswith('xml')?
+            # todo: act on spacing here?
+            processed_child = handle_textnode(child, options, comments_fix=False, preserve_spaces=True)
+            if processed_child is not None:
+                # todo: needing attention!
+                if processed_child.tag == "p":
+                    LOGGER.debug("extra p within p: %s %s %s", processed_child.tag, processed_child.text,
+                                processed_child.tail)
+                    if processed_element.text:
+                        processed_element.text += " " + processed_child.text
+                    else:
+                        processed_element.text = processed_child.text
+                    child.tag = "done"
+                    continue
+                # handle formatting
+                newsub = Element(child.tag)
+                if processed_child.tag in P_FORMATTING:
+                    # check depth and clean
+                    if len(processed_child) > 0:
+                        for item in processed_child:  # children are lists
+                            if text_chars_test(item.text) is True:
+                                item.text = " " + item.text
+                            strip_tags(processed_child, item.tag)
+                    # correct attributes
+                    if child.tag == "hi":
+                        newsub.set("rend", child.get("rend"))
+                    elif child.tag == "ref":
+                        if child.get("target") is not None:
+                            newsub.set("target", child.get("target"))
+                # handle line breaks
+                # elif processed_child.tag == 'lb':
+                #    try:
+                #        processed_child.tail = process_node(child, options).tail
+                #    except AttributeError:  # no text
+                #        pass
+                # prepare text
+                # todo: to be moved to handle_textnode()
+                # if text_chars_test(processed_child.text) is False:
+                #    processed_child.text = ''
+                # if text_chars_test(processed_child.tail) is False:
+                #    processed_child.tail = ''
+                # if there are already children
+                # if len(processed_element) > 0:
+                #    if text_chars_test(processed_child.tail) is True:
+                #        newsub.tail = processed_child.text + processed_child.tail
+                #    else:
+                #        newsub.tail = processed_child.text
+                newsub.text, newsub.tail = processed_child.text, processed_child.tail
+                processed_element.append(newsub)
+        except:
+            pass
         child.tag = "done"
     # finish
     if len(processed_element) > 0:
@@ -517,7 +518,8 @@ def handle_textelem(element: _Element, potential_tags: Set[str], options: Extrac
         new_element = handle_formatting(element, options)  # process_node(element, options)
     elif element.tag == 'table' and 'table' in potential_tags:
         new_element = handle_table(element, potential_tags, options)
-    elif element.tag == 'graphic' and 'graphic' in potential_tags:
+    elif element.tag == '
+    ' and 'graphic' in potential_tags:
         new_element = handle_image(element, options)
     else:
         # other elements (div, ??, ??)
@@ -641,14 +643,18 @@ def extract_content(cleaned_tree: HtmlElement, options: Extractor) -> Tuple[_Ele
     backup_tree = deepcopy(cleaned_tree)
 
     result_body, temp_text, potential_tags = _extract(cleaned_tree, options)
-    #if len(result_body) == 0:
+    # if len(result_body) == 0:
     #    result_body, temp_text, potential_tags = _extract(tree_backup, options)
 
     # try parsing wild <p> elements if nothing found or text too short
     # todo: test precision and recall settings here
-    if len(result_body) == 0 or len(temp_text) < options.min_extracted_size:  # type: ignore[attr-defined]
-        result_body = recover_wild_text(backup_tree, result_body, options, potential_tags)
+    if len(result_body) == 0:
+        # if len(result_body) == 0 or len(temp_text) < options.min_extracted_size:
+        result_body = recover_wild_text(
+            backup_tree, result_body, options, potential_tags
+        )
         temp_text = ' '.join(result_body.itertext()).strip()
+
     # filter output
     strip_elements(result_body, 'done')
     strip_tags(result_body, 'div')
