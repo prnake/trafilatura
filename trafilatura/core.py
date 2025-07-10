@@ -121,9 +121,9 @@ def trafilatura_sequence(
         )
 
     # rescue: baseline extraction on original/dirty tree
-    if len_text < options.min_extracted_size and not options.focus == "precision":  # type: ignore[attr-defined]
-        postbody, temp_text, len_text = baseline(deepcopy(tree_backup))
-        LOGGER.debug("non-clean extracted length: %s (extraction)", len_text)
+    # if len_text < options.min_extracted_size and not options.focus == "precision":  # type: ignore[attr-defined]
+    #     postbody, temp_text, len_text = baseline(deepcopy(tree_backup))
+    #     LOGGER.debug("non-clean extracted length: %s (extraction)", len_text)
 
     return postbody, temp_text, len_text
 

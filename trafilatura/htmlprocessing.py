@@ -315,8 +315,8 @@ def convert_quotes(elem: _Element) -> None:
         code_elems = elem.xpath(".//span[starts-with(@class,'hljs')]")
         if code_elems:
             code_flag = True
-            for subelem in code_elems:
-                subelem.attrib.clear()
+            # for subelem in code_elems:
+            #     subelem.attrib.clear()
         if _is_code_block(elem.text):
             code_flag = True
     elem.tag = "code" if code_flag else "quote"
@@ -332,7 +332,7 @@ def _is_code_block(text: Optional[str]) -> bool:
 
 def convert_headings(elem: _Element) -> None:
     "Add head tags and delete attributes."
-    elem.attrib.clear()
+    # elem.attrib.clear()
     elem.set("rend", elem.tag)
     elem.tag = "head"
 
@@ -382,7 +382,7 @@ def convert_link(elem: HtmlElement, base_url: Optional[str]) -> None:
     "Replace link tags and href attributes, delete the rest."
     elem.tag = "ref"
     target = elem.get("href")  # defaults to None
-    elem.attrib.clear()
+    # elem.attrib.clear()
     if target:
         # convert relative URLs
         if base_url:
@@ -412,7 +412,7 @@ def convert_tags(
 
     if options.formatting:
         for elem in tree.iter(REND_TAG_MAPPING.keys()):
-            elem.attrib.clear()
+            # elem.attrib.clear()
             elem.set("rend", REND_TAG_MAPPING[elem.tag])  # type: ignore[index]
             elem.tag = "hi"
     else:
@@ -454,8 +454,8 @@ def convert_to_html(tree: _Element) -> _Element:
         # handle attributes
         if elem.tag == "a":
             elem.set("href", elem.attrib.pop("target", ""))
-        else:
-            elem.attrib.clear()
+        # else:
+        #     elem.attrib.clear()
     tree.tag = "body"
     root = Element("html")
     root.append(tree)

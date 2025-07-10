@@ -264,7 +264,7 @@ def handle_other_elements(element: _Element, potential_tags: Set[str], options: 
         # divcopy = deepcopy(element)
         processed_element = handle_textnode(element, options, comments_fix=False, preserve_spaces=True)
         if processed_element is not None and text_chars_test(processed_element.text) is True:
-            processed_element.attrib.clear()
+            # processed_element.attrib.clear()
             # small div-correction # could be moved elsewhere
             if processed_element.tag == "div":
                 processed_element.tag = "p"
@@ -276,7 +276,7 @@ def handle_other_elements(element: _Element, potential_tags: Set[str], options: 
 
 def handle_paragraphs(element: _Element, potential_tags: Set[str], options: Extractor) -> Optional[_Element]:
     "Process paragraphs along with their children, trim and clean the content."
-    element.attrib.clear()  # todo: test if necessary
+    # element.attrib.clear()  # todo: test if necessary
     # strip_tags(element, 'p') # change in precision due to spaces?
 
     # no children
@@ -523,6 +523,12 @@ def handle_textelem(element: _Element, potential_tags: Set[str], options: Extrac
     else:
         # other elements (div, ??, ??)
         new_element = handle_other_elements(element, potential_tags, options)
+
+    if new_element is not None and element is not None:
+        for attr_name, attr_value in element.attrib.items():
+            if attr_name.startswith('ciallo'):
+                new_element.set(attr_name, attr_value)
+    
     return new_element
 
 
@@ -671,7 +677,7 @@ def process_comments_node(elem: _Element, potential_tags: Set[str], options: Ext
         processed_element = handle_textnode(elem, options, comments_fix=True)
         # test length and remove
         if processed_element is not None:  # and processed_element.text not in COMMENTS_BLACKLIST:
-            processed_element.attrib.clear()
+            # processed_element.attrib.clear()
             # if textfilter(elem) is True:  # ^Pingback
             #    return None
             return processed_element
