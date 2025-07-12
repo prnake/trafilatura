@@ -17,7 +17,7 @@ from lxml.html import HtmlElement
 from .htmlprocessing import (delete_by_link_density, handle_textnode,
                              link_density_test_tables, process_node,
                              prune_unwanted_nodes)
-from .settings import TAG_CATALOG, Extractor
+from .settings import TAG_CATALOG, TAG_COMMENT_CATALOG, Extractor
 from .utils import FORMATTING_PROTECTED, copy_attributes, is_image_file, text_chars_test, trim
 from .xml import delete_element
 from .xpaths import (BODY_XPATH, COMMENTS_DISCARD_XPATH, COMMENTS_XPATH,
@@ -524,6 +524,7 @@ def handle_textelem(element: _Element, potential_tags: Set[str], options: Extrac
         # other elements (div, ??, ??)
         new_element = handle_other_elements(element, potential_tags, options)
 
+    # 继承所有ciallo开头的属性
     if new_element is not None and element is not None:
         for attr_name, attr_value in element.attrib.items():
             if attr_name.startswith('ciallo'):
@@ -688,7 +689,7 @@ def extract_comments(tree: HtmlElement, options: Extractor) -> Tuple[_Element, s
     "Try to extract comments out of potential sections in the HTML."
     comments_body = Element("body")
     # define iteration strategy
-    potential_tags = set(TAG_CATALOG)  # 'span'
+    potential_tags = set(TAG_COMMENT_CATALOG)  # 'span'
     # potential_tags.add('div') trouble with <div class="comment-author meta">
     for expr in COMMENTS_XPATH:
         # select tree if the expression has been found

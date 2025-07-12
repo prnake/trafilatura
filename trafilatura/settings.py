@@ -436,6 +436,10 @@ BASIC_CLEAN_XPATH = XPath(
 TAG_CATALOG = frozenset(
     ["blockquote", "code", "del", "head", "hi", "lb", "list", "p", "pre", "quote"]
 )
+
+TAG_COMMENT_CATALOG = frozenset(
+    ["blockquote", "code", "del", "head", "hi", "lb", "list", "p", "pre", "quote", "span", "div"]
+)
 # + list(CUT_EMPTY_ELEMS)
 
 
